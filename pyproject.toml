@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nucleic-acid-text"
+version = "0.1.0"
+description = "PyQt5 GUI for nucleic-acid text conversion, repeat expansion, and sequence search highlighting."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "Di Liu Lab" }
+]
+dependencies = [
+    "PyQt5>=5.15"
+]
+
+[project.urls]
+Homepage = "https://github.com/DiLiuLab/nucleic-acid-text"
+Repository = "https://github.com/DiLiuLab/nucleic-acid-text"
+
+[project.scripts]
+na-text-converter = "NA_text_converter_finderV4:main"
