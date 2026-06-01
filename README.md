@@ -30,6 +30,27 @@ The main script is `NA_text_converter_finderV4.py`.
 - Python 3.9 or newer
 - PyQt5
 
+## Download or Update the Repository
+
+If you do not already have the repository on your computer, download it with
+`git clone`:
+
+```bash
+git clone https://github.com/DiLiuLab/nucleic-acid-text.git
+cd nucleic-acid-text
+```
+
+If you already downloaded the repository earlier and want the newest version,
+go into the repository folder and run `git pull`:
+
+```bash
+cd nucleic-acid-text
+git pull
+```
+
+After downloading or updating the repository, install the Python dependencies
+from inside the `nucleic-acid-text` folder.
+
 Install dependencies with:
 
 ```bash
