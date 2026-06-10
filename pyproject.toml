@@ -21,4 +21,4 @@ Homepage = "https://github.com/DiLiuLab/nucleic-acid-text"
 Repository = "https://github.com/DiLiuLab/nucleic-acid-text"
 
 [project.scripts]
-na-text-converter = "NA_text_converter_finderV4:main"
+na-text-converter = "NA_text_converter_finderV5:main"

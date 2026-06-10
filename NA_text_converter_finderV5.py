@@ -1,24 +1,26 @@
 #!/usr/bin/env python3
 """
-NA_text_converter_finderV4.py
+NA_text_converter_finderV5.py
 
-A compact PyQt5 GUI for nucleic-acid sequence conversion and sequence search/highlighting.
+A compact PyQt5 GUI for nucleic-acid sequence conversion, text addition, and
+sequence search/highlighting.
 
 Inputs:
     - Original DNA/RNA sequence pasted or typed into the GUI. Repeat notation such as
       T6 or (CAG)3 is expanded before conversion, search, and sequence statistics.
     - Optional search sequence in Search mode.
-    - Optional prefix text in the "Add text in front of each letter" conversion mode.
+    - Optional text or phrase in Add mode.
 
 Outputs:
-    - Converted sequence text, or
+    - Converted sequence text,
+    - Sequence text with custom text added before each standard base, or
     - Original sequence with exact search matches highlighted in blue and complementary/
       reverse-complementary matches highlighted in yellow.
     - Summary information for the expanded original sequence: DNA/RNA length, total
       length, A, T/U, C, G, whitespace, other characters, and GC%.
 
 Example command:
-    python NA_text_converter_finderV4.py
+    python NA_text_converter_finderV5.py
 """
 
 import html
@@ -45,10 +47,9 @@ CONVERT_REVERSE_COMPLEMENT = "Reverse Complementary"
 CONVERT_REVERSE = "Reverse"
 CONVERT_TO_DNA = "DNA (T instead of U)"
 CONVERT_TO_RNA = "RNA (U instead of T)"
-CONVERT_ADD_TEXT = "Add text in front of each letter"
-
 MODE_CONVERT = "Convert"
 MODE_SEARCH = "Search"
+MODE_ADD = "Add"
 
 CASE_PRESERVE = "Preserve original case"
 CASE_UPPER = "UPPERCASE"
@@ -95,7 +96,7 @@ CANONICAL_DNA_COMPLEMENT["U"] = "A"
 
 
 class NAToolsGUI(QWidget):
-    """GUI for nucleic-acid conversion and sequence searching."""
+    """GUI for nucleic-acid conversion, text addition, and sequence searching."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -133,17 +134,19 @@ class NAToolsGUI(QWidget):
         mode_group = QGroupBox("Mode")
         mode_layout = QHBoxLayout()
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems([MODE_CONVERT, MODE_SEARCH])
+        self.mode_combo.addItems([MODE_CONVERT, MODE_SEARCH, MODE_ADD])
         self.mode_combo.currentTextChanged.connect(self.update_visible_controls)
         mode_layout.addWidget(QLabel("Mode:"))
         mode_layout.addWidget(self.mode_combo)
         mode_group.setLayout(mode_layout)
 
-        # Convert controls, hidden in Search mode.
+        # Convert/Add controls, hidden in Search mode.
         self.convert_group = QGroupBox("Convert Options")
         convert_layout = QVBoxLayout()
 
+        self.convert_to_row_widget = QWidget()
         convert_to_row = QHBoxLayout()
+        convert_to_row.setContentsMargins(0, 0, 0, 0)
         self.convert_combo = QComboBox()
         self.convert_combo.addItems(
             [
@@ -151,12 +154,11 @@ class NAToolsGUI(QWidget):
                 CONVERT_REVERSE,
                 CONVERT_TO_DNA,
                 CONVERT_TO_RNA,
-                CONVERT_ADD_TEXT,
             ]
         )
-        self.convert_combo.currentTextChanged.connect(self.update_visible_controls)
         convert_to_row.addWidget(QLabel("Convert to:"))
         convert_to_row.addWidget(self.convert_combo)
+        self.convert_to_row_widget.setLayout(convert_to_row)
 
         case_row = QHBoxLayout()
         self.case_combo = QComboBox()
@@ -179,12 +181,14 @@ class NAToolsGUI(QWidget):
         prefix_row.setContentsMargins(0, 0, 0, 0)
         self.prefix_input = QLineEdit()
         self.prefix_input.setFont(sequence_font)
-        self.prefix_input.setPlaceholderText("Text to add before each base, e.g., test")
+        self.prefix_input.setPlaceholderText(
+            "Letter or phrase to add before each base, e.g., i or test-"
+        )
         prefix_row.addWidget(QLabel("Text to add:"))
         prefix_row.addWidget(self.prefix_input)
         self.prefix_row_widget.setLayout(prefix_row)
 
-        convert_layout.addLayout(convert_to_row)
+        convert_layout.addWidget(self.convert_to_row_widget)
         convert_layout.addLayout(case_row)
         convert_layout.addLayout(non_related_row)
         convert_layout.addWidget(self.prefix_row_widget)
@@ -235,19 +239,27 @@ class NAToolsGUI(QWidget):
         self.setLayout(main_layout)
 
     def update_visible_controls(self) -> None:
-        """Show only controls related to the selected mode and conversion option."""
+        """Show only controls related to the selected mode."""
         mode = self.mode_combo.currentText()
-        operation = self.convert_combo.currentText()
         is_convert = mode == MODE_CONVERT
-        needs_prefix = is_convert and operation == CONVERT_ADD_TEXT
+        is_search = mode == MODE_SEARCH
+        is_add = mode == MODE_ADD
 
-        self.convert_group.setVisible(is_convert)
-        self.search_group.setVisible(not is_convert)
-        self.prefix_row_widget.setVisible(needs_prefix)
+        self.convert_group.setVisible(is_convert or is_add)
+        self.convert_group.setTitle("Add Options" if is_add else "Convert Options")
+        self.convert_to_row_widget.setVisible(is_convert)
+        self.search_group.setVisible(is_search)
+        self.prefix_row_widget.setVisible(is_add)
 
         if is_convert:
             self.run_button.setText("Convert")
             self.output_summary.setText("Conversion output will appear below.")
+        elif is_add:
+            self.run_button.setText("Add")
+            self.output_summary.setText(
+                "Add output will appear below. The entered text is added before each "
+                "standard A/C/G/T/U base."
+            )
         else:
             self.run_button.setText("Search")
             self.output_summary.setText(
@@ -263,10 +275,13 @@ class NAToolsGUI(QWidget):
         self.sequence_info_text.setPlainText(format_sequence_info(info))
 
     def run_selected_mode(self) -> None:
-        """Run conversion or search according to the current GUI selections."""
+        """Run conversion, text addition, or search for the selected mode."""
         self.update_sequence_info()
-        if self.mode_combo.currentText() == MODE_SEARCH:
+        mode = self.mode_combo.currentText()
+        if mode == MODE_SEARCH:
             self.search_sequence()
+        elif mode == MODE_ADD:
+            self.add_sequence()
         else:
             self.convert_sequence()
 
@@ -304,14 +319,32 @@ class NAToolsGUI(QWidget):
             result = rna_to_dna_with_case(cleaned_sequence)
         elif operation == CONVERT_TO_RNA:
             result = dna_to_rna_with_case(cleaned_sequence)
-        elif operation == CONVERT_ADD_TEXT:
-            result = add_text_before_each_base(cleaned_sequence, self.prefix_input.text())
         else:
             result = cleaned_sequence
 
         result = apply_case_mode(result, case_mode)
         self.output_summary.setText(
             "Conversion complete. " + format_sequence_info(get_original_sequence_info(sequence))
+        )
+        self.set_output_plain_text(result)
+
+    def add_sequence(self) -> None:
+        """Add the entered text before each standard base in the expanded sequence."""
+        raw_sequence = self.sequence_input.toPlainText()
+        sequence = expand_repeat_notation(raw_sequence)
+        case_mode = self.case_combo.currentText()
+        whitespace_mode = self.whitespace_combo.currentText()
+        other_non_base_mode = self.other_non_base_combo.currentText()
+
+        cleaned_sequence = prepare_sequence_for_conversion(
+            sequence, whitespace_mode, other_non_base_mode
+        )
+        result = add_text_before_each_base(cleaned_sequence, self.prefix_input.text())
+        result = apply_case_mode(result, case_mode)
+
+        self.output_summary.setText(
+            "Text addition complete. "
+            + format_sequence_info(get_original_sequence_info(sequence))
         )
         self.set_output_plain_text(result)
 

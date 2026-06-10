@@ -3,7 +3,7 @@
 A compact PyQt5 desktop GUI for converting, cleaning, inspecting, and searching
 nucleic-acid text.
 
-The main script is `NA_text_converter_finderV4.py`.
+The main script is `NA_text_converter_finderV5.py`.
 
 ## Features
 
@@ -15,7 +15,8 @@ The main script is `NA_text_converter_finderV4.py`.
   - reverse
   - DNA output with `T` instead of `U`
   - RNA output with `U` instead of `T`
-  - add custom text before each standard base
+- Use the dedicated Add mode to add any letter or phrase before each standard
+  base; for example, adding `i` to `ATCG` produces `iAiTiCiG`.
 - Preserve, uppercase, or lowercase output.
 - Preserve or remove whitespace independently from other non-base characters.
 - Search for sequence matches while ignoring whitespace and treating `T` and `U`
@@ -68,7 +69,7 @@ python3 -m pip install -e .
 Run the script directly with Python:
 
 ```bash
-python3 NA_text_converter_finderV4.py
+python3 NA_text_converter_finderV5.py
 ```
 
 If installed with `pip install -e .`, you can also launch it with:
@@ -83,8 +84,8 @@ The script already includes a Python shebang. On macOS or Linux, mark it
 executable and run it directly:
 
 ```bash
-chmod +x NA_text_converter_finderV4.py
-./NA_text_converter_finderV4.py
+chmod +x NA_text_converter_finderV5.py
+./NA_text_converter_finderV5.py
 ```
 
 This still requires Python and PyQt5 to be installed in the environment that
@@ -96,7 +97,7 @@ For a single-file executable with bundled dependencies, install PyInstaller:
 
 ```bash
 python3 -m pip install pyinstaller
-pyinstaller --onefile --windowed --name na-text-converter NA_text_converter_finderV4.py
+pyinstaller --onefile --windowed --name na-text-converter NA_text_converter_finderV5.py
 ```
 
 The built executable will be placed in `dist/`.
@@ -113,7 +114,7 @@ Notes:
 Run a basic syntax/import compile check:
 
 ```bash
-python3 -m py_compile NA_text_converter_finderV4.py
+python3 -m py_compile NA_text_converter_finderV5.py
 ```
 
 ## License

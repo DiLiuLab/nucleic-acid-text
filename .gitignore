@@ -24,3 +24,6 @@ dist/
 .ruff_cache/
 .coverage
 htmlcov/
+
+# Archived previous script versions
+_previous/
