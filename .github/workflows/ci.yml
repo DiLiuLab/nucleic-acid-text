@@ -25,3 +25,11 @@ jobs:
 
       - name: Check version output
         run: python NA_text_converter_finder.py --version
+
+      - name: Check standalone script without icon resources
+        run: |
+          standalone_dir="$(mktemp -d)"
+          cp NA_text_converter_finder.py "$standalone_dir/"
+          cd "$standalone_dir"
+          python NA_text_converter_finder.py --version
+          QT_QPA_PLATFORM=offscreen python -c "from PyQt5.QtWidgets import QApplication; import NA_text_converter_finder as m; app = QApplication([]); gui = m.NAToolsGUI(); assert not m.APP_RESOURCES_AVAILABLE; assert gui.windowTitle().endswith('v6.2')"

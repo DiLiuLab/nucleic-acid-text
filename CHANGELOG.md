@@ -2,6 +2,18 @@
 
 This file records notable changes to the Nucleic Acid Text Converter and Finder.
 
+## v6.2 - 2026-06-11
+
+### Changed
+
+- `NA_text_converter_finder.py` now runs normally when `app_resources.py` is
+  unavailable, allowing the main file to be used as a standalone script.
+- The custom application icon still loads automatically when `app_resources.py`
+  is available.
+- The Python package and GUI version are now `6.2`.
+- The GitHub release includes `NA_text_converter_finder.py` as a directly
+  downloadable standalone script.
+
 ## v6.1 - 2026-06-10
 
 ### Added

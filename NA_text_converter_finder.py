@@ -29,7 +29,15 @@ import html
 import sys
 from typing import Dict, List, Sequence, Tuple
 
-import app_resources  # Registers the embedded application icon.
+try:
+    import app_resources  # Registers the embedded application icon.
+except ModuleNotFoundError as error:
+    if error.name != "app_resources":
+        raise
+    APP_RESOURCES_AVAILABLE = False
+else:
+    APP_RESOURCES_AVAILABLE = True
+
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QIcon, QTextCharFormat, QTextCursor
 from PyQt5.QtWidgets import (
@@ -48,7 +56,7 @@ from PyQt5.QtWidgets import (
 
 
 APP_NAME = "Nucleic Acid Converter and Finder"
-APP_VERSION = "6.1"
+APP_VERSION = "6.2"
 APP_ICON_RESOURCE = ":/icons/nucleic_acid_text.png"
 
 CONVERT_REVERSE_COMPLEMENT = "Reverse Complementary"
@@ -109,7 +117,8 @@ class NAToolsGUI(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
-        self.setWindowIcon(QIcon(APP_ICON_RESOURCE))
+        if APP_RESOURCES_AVAILABLE:
+            self.setWindowIcon(QIcon(APP_ICON_RESOURCE))
         self.setMinimumSize(780, 760)
         self._init_ui()
         self.update_visible_controls()
@@ -830,7 +839,8 @@ def main() -> None:
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
-    app.setWindowIcon(QIcon(APP_ICON_RESOURCE))
+    if APP_RESOURCES_AVAILABLE:
+        app.setWindowIcon(QIcon(APP_ICON_RESOURCE))
     gui = NAToolsGUI()
     gui.show()
     sys.exit(app.exec_())
