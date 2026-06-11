@@ -26,10 +26,39 @@ jobs:
       - name: Check version output
         run: python NA_text_converter_finder.py --version
 
+      - name: Check v6.3 GUI controls and search statistics
+        run: |
+          QT_QPA_PLATFORM=offscreen python - <<'PY'
+          from PyQt5.QtWidgets import QApplication
+          import NA_text_converter_finder as m
+
+          app = QApplication([])
+          gui = m.NAToolsGUI()
+          gui.sequence_input.setPlainText("ATCG")
+          gui.clear_input_button.click()
+          assert gui.sequence_input.toPlainText() == ""
+
+          gui.set_output_plain_text("copy me")
+          gui.copy_output_button.click()
+          assert app.clipboard().text() == "copy me"
+
+          gui.search_input.setPlainText("(AG)2 T")
+          search_info = gui.search_sequence_info_text.toPlainText()
+          assert "Search sequence info after repeat expansion" in search_info
+          assert "DNA/RNA length=5" in search_info
+          assert "A=2" in search_info
+          assert "T/U=1" in search_info
+          assert "G=2" in search_info
+
+          checkbox_text = gui.include_complementary_checkbox.text()
+          assert "not reverse-complementary" in checkbox_text
+          assert gui.windowTitle().endswith("v6.3")
+          PY
+
       - name: Check standalone script without icon resources
         run: |
           standalone_dir="$(mktemp -d)"
           cp NA_text_converter_finder.py "$standalone_dir/"
           cd "$standalone_dir"
           python NA_text_converter_finder.py --version
-          QT_QPA_PLATFORM=offscreen python -c "from PyQt5.QtWidgets import QApplication; import NA_text_converter_finder as m; app = QApplication([]); gui = m.NAToolsGUI(); assert not m.APP_RESOURCES_AVAILABLE; assert gui.windowTitle().endswith('v6.2')"
+          QT_QPA_PLATFORM=offscreen python -c "from PyQt5.QtWidgets import QApplication; import NA_text_converter_finder as m; app = QApplication([]); gui = m.NAToolsGUI(); assert not m.APP_RESOURCES_AVAILABLE; assert gui.windowTitle().endswith('v6.3')"

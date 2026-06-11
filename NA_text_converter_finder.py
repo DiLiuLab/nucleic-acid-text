@@ -56,7 +56,7 @@ from PyQt5.QtWidgets import (
 
 
 APP_NAME = "Nucleic Acid Converter and Finder"
-APP_VERSION = "6.2"
+APP_VERSION = "6.3"
 APP_ICON_RESOURCE = ":/icons/nucleic_acid_text.png"
 
 CONVERT_REVERSE_COMPLEMENT = "Reverse Complementary"
@@ -119,10 +119,11 @@ class NAToolsGUI(QWidget):
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
         if APP_RESOURCES_AVAILABLE:
             self.setWindowIcon(QIcon(APP_ICON_RESOURCE))
-        self.setMinimumSize(780, 760)
+        self.setMinimumSize(780, 840)
         self._init_ui()
         self.update_visible_controls()
         self.update_sequence_info()
+        self.update_search_sequence_info()
 
     def _init_ui(self) -> None:
         main_layout = QVBoxLayout()
@@ -138,6 +139,12 @@ class NAToolsGUI(QWidget):
         self.sequence_input.setMinimumHeight(260)
         self.sequence_input.textChanged.connect(self.update_sequence_info)
 
+        input_button_layout = QHBoxLayout()
+        input_button_layout.addStretch()
+        self.clear_input_button = QPushButton("Clear Input")
+        self.clear_input_button.clicked.connect(self.clear_input)
+        input_button_layout.addWidget(self.clear_input_button)
+
         self.sequence_info_text = QTextEdit()
         self.sequence_info_text.setReadOnly(True)
         self.sequence_info_text.setMaximumHeight(92)
@@ -145,6 +152,7 @@ class NAToolsGUI(QWidget):
         self.sequence_info_text.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
 
         input_layout.addWidget(self.sequence_input)
+        input_layout.addLayout(input_button_layout)
         input_layout.addWidget(self.sequence_info_text)
         input_group.setLayout(input_layout)
 
@@ -228,11 +236,29 @@ class NAToolsGUI(QWidget):
         )
         self.search_input.setMinimumHeight(80)
         self.search_input.setMaximumHeight(110)
+        self.search_input.textChanged.connect(self.update_search_sequence_info)
+
+        self.search_sequence_info_text = QTextEdit()
+        self.search_sequence_info_text.setReadOnly(True)
+        self.search_sequence_info_text.setMaximumHeight(92)
+        self.search_sequence_info_text.setPlaceholderText(
+            "Search sequence info will appear here."
+        )
+        self.search_sequence_info_text.setTextInteractionFlags(
+            Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard
+        )
+
         self.include_complementary_checkbox = QCheckBox(
-            "Include complementary matches (red highlighting)"
+            "Include complementary matches "
+            "(not reverse-complementary; red highlighting)"
         )
         self.include_complementary_checkbox.setChecked(False)
+        self.include_complementary_checkbox.setToolTip(
+            "Complementary uses the base-by-base complement in the same direction. "
+            "Reverse-complementary also reverses the sequence."
+        )
         search_layout.addWidget(self.search_input)
+        search_layout.addWidget(self.search_sequence_info_text)
         search_layout.addWidget(self.include_complementary_checkbox)
         self.search_group.setLayout(search_layout)
 
@@ -242,8 +268,11 @@ class NAToolsGUI(QWidget):
         self.run_button.clicked.connect(self.run_selected_mode)
         self.clear_button = QPushButton("Clear Output")
         self.clear_button.clicked.connect(self.clear_output)
+        self.copy_output_button = QPushButton("Copy Output")
+        self.copy_output_button.clicked.connect(self.copy_output)
         button_layout.addWidget(self.run_button)
         button_layout.addWidget(self.clear_button)
+        button_layout.addWidget(self.copy_output_button)
 
         # Output field.
         output_group = QGroupBox("Output")
@@ -301,9 +330,19 @@ class NAToolsGUI(QWidget):
         info = get_original_sequence_info(expanded_sequence)
         self.sequence_info_text.setPlainText(format_sequence_info(info))
 
+    def update_search_sequence_info(self) -> None:
+        """Display essential statistics for the expanded search sequence."""
+        raw_sequence = self.search_input.toPlainText()
+        expanded_sequence = expand_repeat_notation(raw_sequence)
+        info = get_original_sequence_info(expanded_sequence)
+        self.search_sequence_info_text.setPlainText(
+            format_sequence_info(info, "Search sequence")
+        )
+
     def run_selected_mode(self) -> None:
         """Run conversion, text addition, or search for the selected mode."""
         self.update_sequence_info()
+        self.update_search_sequence_info()
         mode = self.mode_combo.currentText()
         if mode == MODE_SEARCH:
             self.search_sequence()
@@ -312,10 +351,18 @@ class NAToolsGUI(QWidget):
         else:
             self.convert_sequence()
 
+    def clear_input(self) -> None:
+        """Clear the original sequence input."""
+        self.sequence_input.clear()
+
     def clear_output(self) -> None:
         self.output_summary.setText("")
         self.output_text.clear()
         self.output_text.setCurrentCharFormat(QTextCharFormat())
+
+    def copy_output(self) -> None:
+        """Copy the output text without search-highlight formatting."""
+        QApplication.clipboard().setText(self.output_text.toPlainText())
 
     def set_output_plain_text(self, text: str) -> None:
         """Set unhighlighted output text and clear any previous search formatting."""
@@ -527,12 +574,14 @@ def get_original_sequence_info(sequence: str) -> Dict[str, object]:
     return counts
 
 
-def format_sequence_info(info: Dict[str, object]) -> str:
+def format_sequence_info(
+    info: Dict[str, object], sequence_label: str = "Original sequence"
+) -> str:
     """Format sequence statistics as one compact line for the GUI."""
     gc_percent = info["gc_percent"]
     gc_text = "N/A" if gc_percent is None else f"{gc_percent:.2f}%"
     return (
-        "Original sequence info after repeat expansion: "
+        f"{sequence_label} info after repeat expansion: "
         f"DNA/RNA length={info['recognized_bases']}; Total length={info['total_length']}; "
         f"A={info['A']}; T/U={info['T_or_U']}; C={info['C']}; G={info['G']}; "
         f"Space/whitespace={info['whitespace']}; Other={info['other']}; "

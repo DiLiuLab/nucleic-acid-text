@@ -2,6 +2,21 @@
 
 This file records notable changes to the Nucleic Acid Text Converter and Finder.
 
+## v6.3 - 2026-06-11
+
+### Added
+
+- A Clear Input button directly below the original sequence editor.
+- A Copy Output button that copies plain output text to the clipboard.
+- Live essential statistics for the Search Sequence, including repeat-expanded
+  length, base counts, whitespace, other characters, and GC percentage.
+
+### Changed
+
+- The complementary-search option now explicitly notes that complementary is
+  different from reverse-complementary.
+- The Python package and GUI version are now `6.3`.
+
 ## v6.2 - 2026-06-11
 
 ### Changed
