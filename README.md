@@ -3,7 +3,8 @@
 A compact PyQt5 desktop GUI for converting, cleaning, inspecting, and searching
 nucleic-acid text.
 
-The main script is `NA_text_converter_finderV5.py`.
+The main script is `NA_text_converter_finder.py`. The current release is **v6.1**.
+See [CHANGELOG.md](CHANGELOG.md) for version history and release details.
 
 ## Features
 
@@ -21,8 +22,12 @@ The main script is `NA_text_converter_finderV5.py`.
 - Preserve or remove whitespace independently from other non-base characters.
 - Search for sequence matches while ignoring whitespace and treating `T` and `U`
   as equivalent.
-- Highlight exact search matches in blue and complementary or reverse-complementary
-  matches in yellow.
+- Highlight exact matches in yellow and reverse-complementary matches in light blue.
+- Optionally include complementary matches, highlighted in red. Complementary
+  searching is disabled by default.
+- Display the application version in the GUI and report it in the terminal with
+  `-v` or `--version`.
+- Use a custom DNA-search application icon in the GUI and packaged applications.
 - Show expanded-sequence statistics, including recognized DNA/RNA length, total
   length, base counts, whitespace, other characters, and GC percentage.
 
@@ -69,7 +74,7 @@ python3 -m pip install -e .
 Run the script directly with Python:
 
 ```bash
-python3 NA_text_converter_finderV5.py
+python3 NA_text_converter_finder.py
 ```
 
 If installed with `pip install -e .`, you can also launch it with:
@@ -78,14 +83,24 @@ If installed with `pip install -e .`, you can also launch it with:
 na-text-converter
 ```
 
+Show the installed version without opening the GUI:
+
+```bash
+python3 NA_text_converter_finder.py --version
+na-text-converter -v
+```
+
+The v6.1 GitHub release also provides a macOS x86_64 application bundle with
+the custom Dock icon. It is ad-hoc signed but not Apple-notarized.
+
 ## Make the Script Executable
 
 The script already includes a Python shebang. On macOS or Linux, mark it
 executable and run it directly:
 
 ```bash
-chmod +x NA_text_converter_finderV5.py
-./NA_text_converter_finderV5.py
+chmod +x NA_text_converter_finder.py
+./NA_text_converter_finder.py
 ```
 
 This still requires Python and PyQt5 to be installed in the environment that
@@ -97,7 +112,8 @@ For a single-file executable with bundled dependencies, install PyInstaller:
 
 ```bash
 python3 -m pip install pyinstaller
-pyinstaller --onefile --windowed --name na-text-converter NA_text_converter_finderV5.py
+pyinstaller --onefile --windowed --name na-text-converter \
+  --icon assets/nucleic_acid_text.icns NA_text_converter_finder.py
 ```
 
 The built executable will be placed in `dist/`.
@@ -105,7 +121,9 @@ The built executable will be placed in `dist/`.
 Notes:
 
 - Use `--windowed` for a GUI-style app without a terminal window.
-- On macOS, PyInstaller builds for the current platform and architecture.
+- The command above uses the macOS `.icns` icon. On Windows, use
+  `assets/nucleic_acid_text.ico`; on Linux, use `assets/nucleic_acid_text.png`.
+- PyInstaller builds for the current platform and architecture.
 - If you use a virtual environment, run PyInstaller from the same environment
   where PyQt5 is installed.
 
@@ -114,7 +132,7 @@ Notes:
 Run a basic syntax/import compile check:
 
 ```bash
-python3 -m py_compile NA_text_converter_finderV5.py
+python3 -m py_compile NA_text_converter_finder.py app_resources.py
 ```
 
 ## License

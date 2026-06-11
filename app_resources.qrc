@@ -1,0 +1,5 @@
+<RCC>
+  <qresource prefix="/icons">
+    <file alias="nucleic_acid_text.png">assets/nucleic_acid_text_256.png</file>
+  </qresource>
+</RCC>

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-NA_text_converter_finderV5.py
+NA_text_converter_finder.py
 
 A compact PyQt5 GUI for nucleic-acid sequence conversion, text addition, and
 sequence search/highlighting.
@@ -14,23 +14,27 @@ Inputs:
 Outputs:
     - Converted sequence text,
     - Sequence text with custom text added before each standard base, or
-    - Original sequence with exact search matches highlighted in blue and complementary/
-      reverse-complementary matches highlighted in yellow.
+    - Original sequence with exact matches highlighted in yellow, reverse-complementary
+      matches highlighted in light blue, and optional complementary matches highlighted
+      in red.
     - Summary information for the expanded original sequence: DNA/RNA length, total
       length, A, T/U, C, G, whitespace, other characters, and GC%.
 
 Example command:
-    python NA_text_converter_finderV5.py
+    python NA_text_converter_finder.py
 """
 
+import argparse
 import html
 import sys
-from typing import Dict, Iterable, List, Sequence, Tuple
+from typing import Dict, List, Sequence, Tuple
 
+import app_resources  # Registers the embedded application icon.
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont, QTextCharFormat, QTextCursor
+from PyQt5.QtGui import QFont, QIcon, QTextCharFormat, QTextCursor
 from PyQt5.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QGroupBox,
     QHBoxLayout,
@@ -42,6 +46,10 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
+
+APP_NAME = "Nucleic Acid Converter and Finder"
+APP_VERSION = "6.1"
+APP_ICON_RESOURCE = ":/icons/nucleic_acid_text.png"
 
 CONVERT_REVERSE_COMPLEMENT = "Reverse Complementary"
 CONVERT_REVERSE = "Reverse"
@@ -100,7 +108,8 @@ class NAToolsGUI(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Nucleic Acid Converter and Finder")
+        self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
+        self.setWindowIcon(QIcon(APP_ICON_RESOURCE))
         self.setMinimumSize(780, 760)
         self._init_ui()
         self.update_visible_controls()
@@ -138,6 +147,10 @@ class NAToolsGUI(QWidget):
         self.mode_combo.currentTextChanged.connect(self.update_visible_controls)
         mode_layout.addWidget(QLabel("Mode:"))
         mode_layout.addWidget(self.mode_combo)
+        mode_layout.addStretch()
+        self.version_label = QLabel(f"v{APP_VERSION}")
+        self.version_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        mode_layout.addWidget(self.version_label)
         mode_group.setLayout(mode_layout)
 
         # Convert/Add controls, hidden in Search mode.
@@ -206,7 +219,12 @@ class NAToolsGUI(QWidget):
         )
         self.search_input.setMinimumHeight(80)
         self.search_input.setMaximumHeight(110)
+        self.include_complementary_checkbox = QCheckBox(
+            "Include complementary matches (red highlighting)"
+        )
+        self.include_complementary_checkbox.setChecked(False)
         search_layout.addWidget(self.search_input)
+        search_layout.addWidget(self.include_complementary_checkbox)
         self.search_group.setLayout(search_layout)
 
         # Buttons.
@@ -263,8 +281,8 @@ class NAToolsGUI(QWidget):
         else:
             self.run_button.setText("Search")
             self.output_summary.setText(
-                "Search output: exact matches = blue; complementary/reverse-complementary "
-                "matches = yellow."
+                "Search output: exact matches = yellow; reverse-complementary matches = "
+                "light blue; optional complementary matches = red."
             )
 
     def update_sequence_info(self) -> None:
@@ -351,17 +369,31 @@ class NAToolsGUI(QWidget):
     def search_sequence(self) -> None:
         original_sequence = expand_repeat_notation(self.sequence_input.toPlainText())
         query_sequence = expand_repeat_notation(self.search_input.toPlainText())
+        include_complementary = self.include_complementary_checkbox.isChecked()
 
-        highlighted_html, same_count, complementary_count, warnings = highlight_search_matches(
-            original_sequence, query_sequence
+        (
+            highlighted_html,
+            exact_count,
+            complementary_count,
+            reverse_complementary_count,
+            warnings,
+        ) = highlight_search_matches(
+            original_sequence,
+            query_sequence,
+            include_complementary=include_complementary,
         )
         warning_text = ""
         if warnings:
             warning_text = " " + " ".join(warnings)
 
+        complementary_summary = (
+            f"Complementary matches: {complementary_count}"
+            if include_complementary
+            else "Complementary matches: not searched"
+        )
         self.output_summary.setText(
-            f"Exact matches: {same_count}; complementary/reverse-complementary matches: "
-            f"{complementary_count}. "
+            f"Exact matches: {exact_count}; reverse-complementary matches: "
+            f"{reverse_complementary_count}; {complementary_summary}. "
             + format_sequence_info(get_original_sequence_info(original_sequence))
             + warning_text
         )
@@ -640,47 +672,53 @@ def find_all_overlapping(haystack: str, needle: str) -> List[int]:
     return positions
 
 
-def unique_preserving_order(values: Iterable[str]) -> List[str]:
-    """Return unique strings while preserving their original order."""
-    seen = set()
-    unique_values = []
-    for value in values:
-        if value not in seen:
-            unique_values.append(value)
-            seen.add(value)
-    return unique_values
-
-
 def collect_match_styles(
     searchable_original: str,
     raw_indices: Sequence[int],
     exact_pattern: str,
-    complementary_patterns: Sequence[str],
-) -> Tuple[Dict[int, str], int, int]:
-    """Collect raw-character highlight styles for exact and complementary matches."""
+    reverse_complementary_pattern: str,
+    complementary_pattern: str,
+) -> Tuple[Dict[int, str], int, int, int]:
+    """Collect separate highlight styles and counts for the three match classes."""
     styles: Dict[int, str] = {}
 
-    complementary_starts = set()
-    for pattern in complementary_patterns:
-        for start in find_all_overlapping(searchable_original, pattern):
-            complementary_starts.add((start, pattern))
-            for offset in range(len(pattern)):
-                styles[raw_indices[start + offset]] = "complementary"
+    complementary_starts = find_all_overlapping(
+        searchable_original, complementary_pattern
+    )
+    for start in complementary_starts:
+        for offset in range(len(complementary_pattern)):
+            styles[raw_indices[start + offset]] = "complementary"
+
+    reverse_complementary_starts = find_all_overlapping(
+        searchable_original, reverse_complementary_pattern
+    )
+    for start in reverse_complementary_starts:
+        for offset in range(len(reverse_complementary_pattern)):
+            # Reverse-complementary matches take priority over complementary matches.
+            styles[raw_indices[start + offset]] = "reverse_complementary"
 
     exact_starts = find_all_overlapping(searchable_original, exact_pattern)
     for start in exact_starts:
         for offset in range(len(exact_pattern)):
-            # Exact matches take priority if the two highlight classes overlap.
+            # Exact matches take priority over both transformed match classes.
             styles[raw_indices[start + offset]] = "exact"
 
-    return styles, len(exact_starts), len(complementary_starts)
+    return (
+        styles,
+        len(exact_starts),
+        len(complementary_starts),
+        len(reverse_complementary_starts),
+    )
 
 
 def text_to_highlighted_html(raw_sequence: str, styles: Dict[int, str]) -> str:
-    """Convert raw text to HTML with blue/yellow sequence highlights."""
+    """Convert raw text to HTML with distinct colors for each match class."""
     span_for_style = {
-        "exact": '<span style="background-color:#4da3ff; color:white;">',
-        "complementary": '<span style="background-color:#fff176; color:black;">',
+        "exact": '<span style="background-color:#fff176; color:black;">',
+        "reverse_complementary": (
+            '<span style="background-color:#81d4fa; color:black;">'
+        ),
+        "complementary": '<span style="background-color:#ef5350; color:white;">',
     }
 
     parts = [
@@ -703,13 +741,17 @@ def text_to_highlighted_html(raw_sequence: str, styles: Dict[int, str]) -> str:
     return "".join(parts)
 
 
-def highlight_search_matches(raw_sequence: str, query_sequence: str) -> Tuple[str, int, int, List[str]]:
+def highlight_search_matches(
+    raw_sequence: str,
+    query_sequence: str,
+    include_complementary: bool = False,
+) -> Tuple[str, int, int, int, List[str]]:
     """
-    Highlight exact and complementary matches of query_sequence inside raw_sequence.
+    Highlight exact, reverse-complementary, and optional complementary matches.
 
     The search ignores spaces and line breaks and treats T and U as equivalent. Exact
-    query matches are highlighted in blue. Complementary and reverse-complementary
-    matches are highlighted in yellow unless they are identical to the exact pattern.
+    query matches are yellow, reverse-complementary matches are light blue, and
+    complementary matches are red when include_complementary is True.
     """
     searchable_original, raw_indices = extract_searchable_sequence(raw_sequence)
     exact_pattern, _ = extract_searchable_sequence(query_sequence)
@@ -717,33 +759,78 @@ def highlight_search_matches(raw_sequence: str, query_sequence: str) -> Tuple[st
 
     if not exact_pattern:
         warnings.append("Please enter a search sequence containing nucleic-acid letters.")
-        return text_to_highlighted_html(raw_sequence, {}), 0, 0, warnings
+        return text_to_highlighted_html(raw_sequence, {}), 0, 0, 0, warnings
 
     complement_pattern = complement_canonical_dna(exact_pattern)
     reverse_complement_pattern = reverse_complement_canonical_dna(exact_pattern)
-    complementary_patterns = unique_preserving_order(
-        [
-            pattern
-            for pattern in [complement_pattern, reverse_complement_pattern]
-            if pattern and pattern != exact_pattern
-        ]
-    )
+    reverse_complementary_search_pattern = reverse_complement_pattern
+    complementary_search_pattern = ""
 
-    if not complementary_patterns:
+    if reverse_complement_pattern == exact_pattern:
+        reverse_complementary_search_pattern = ""
         warnings.append(
-            "The complementary/reverse-complementary pattern is identical to the exact "
-            "pattern, so only blue exact matches are shown."
+            "The reverse-complementary pattern is identical to the exact pattern, so "
+            "those matches are counted and shown as yellow exact matches."
         )
 
-    styles, same_count, complementary_count = collect_match_styles(
-        searchable_original, raw_indices, exact_pattern, complementary_patterns
+    if include_complementary:
+        if complement_pattern == exact_pattern:
+            warnings.append(
+                "The complementary pattern is identical to the exact pattern, so those "
+                "matches are counted and shown as yellow exact matches."
+            )
+        elif complement_pattern == reverse_complement_pattern:
+            warnings.append(
+                "The complementary pattern is identical to the reverse-complementary "
+                "pattern, so those matches are counted and shown as light-blue "
+                "reverse-complementary matches."
+            )
+        else:
+            complementary_search_pattern = complement_pattern
+
+    (
+        styles,
+        exact_count,
+        complementary_count,
+        reverse_complementary_count,
+    ) = collect_match_styles(
+        searchable_original,
+        raw_indices,
+        exact_pattern,
+        reverse_complementary_search_pattern,
+        complementary_search_pattern,
     )
-    return text_to_highlighted_html(raw_sequence, styles), same_count, complementary_count, warnings
+    return (
+        text_to_highlighted_html(raw_sequence, styles),
+        exact_count,
+        complementary_count,
+        reverse_complementary_count,
+        warnings,
+    )
+
+
+def parse_command_line(arguments: Sequence[str]) -> None:
+    """Parse command-line options, including terminal version reporting."""
+    parser = argparse.ArgumentParser(
+        description="Convert, annotate, and search nucleic-acid sequence text."
+    )
+    parser.add_argument(
+        "-v",
+        "--version",
+        action="version",
+        version=f"{APP_NAME} v{APP_VERSION}",
+    )
+    parser.parse_args(arguments)
 
 
 def main() -> None:
     """Start the GUI application."""
+    parse_command_line(sys.argv[1:])
     app = QApplication(sys.argv)
+    app.setApplicationName(APP_NAME)
+    app.setApplicationDisplayName(APP_NAME)
+    app.setApplicationVersion(APP_VERSION)
+    app.setWindowIcon(QIcon(APP_ICON_RESOURCE))
     gui = NAToolsGUI()
     gui.show()
     sys.exit(app.exec_())
