@@ -3,7 +3,7 @@
 A compact PyQt5 desktop GUI for converting, cleaning, inspecting, and searching
 nucleic-acid text.
 
-The main script is `NA_text_converter_finder.py`. The current release is **v6.3**.
+The main script is `NA_text_converter_finder.py`. The current version is **v6.4**.
 See [CHANGELOG.md](CHANGELOG.md) for version history and release details.
 
 ## Features
@@ -30,7 +30,10 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and release details.
 - Use a custom DNA-search application icon in the GUI and packaged applications.
 - Continue running as a standalone script when `app_resources.py` is unavailable;
   in that case, only the custom icon is omitted.
-- Clear the original sequence input or copy output text with dedicated buttons.
+- Clear the original sequence from the compact Mode row or copy output text with
+  dedicated buttons.
+- Navigate long original, search, and output sequences with vertical scrollbars
+  or the mouse wheel while text wraps within each editor.
 - Display live sequence statistics for both the original and search sequences.
 - Clarify that complementary matching uses the same sequence direction and is
   different from reverse-complementary matching.
@@ -96,9 +99,9 @@ python3 NA_text_converter_finder.py --version
 na-text-converter -v
 ```
 
-The v6.3 GitHub release also provides a macOS x86_64 application bundle with
-the custom Dock icon and a directly downloadable standalone Python script. The
-macOS application is ad-hoc signed but not Apple-notarized.
+GitHub releases also provide a macOS x86_64 application bundle with the custom
+Dock icon and a directly downloadable standalone Python script. The macOS
+application is ad-hoc signed but not Apple-notarized.
 
 For standalone use, `NA_text_converter_finder.py` may be copied and run without
 `app_resources.py`. All sequence functions remain available, but the custom

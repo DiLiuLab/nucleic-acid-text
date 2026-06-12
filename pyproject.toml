@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nucleic-acid-text"
-version = "6.3"
+version = "6.4"
 description = "PyQt5 GUI for nucleic-acid text conversion, repeat expansion, and sequence search highlighting."
 readme = "README.md"
 requires-python = ">=3.9"

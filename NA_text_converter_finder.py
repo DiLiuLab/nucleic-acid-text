@@ -56,7 +56,7 @@ from PyQt5.QtWidgets import (
 
 
 APP_NAME = "Nucleic Acid Converter and Finder"
-APP_VERSION = "6.3"
+APP_VERSION = "6.4"
 APP_ICON_RESOURCE = ":/icons/nucleic_acid_text.png"
 
 CONVERT_REVERSE_COMPLEMENT = "Reverse Complementary"
@@ -136,14 +136,14 @@ class NAToolsGUI(QWidget):
         self.sequence_input = QTextEdit()
         self.sequence_input.setFont(sequence_font)
         self.sequence_input.setPlaceholderText("Paste or type DNA/RNA sequence here...")
-        self.sequence_input.setMinimumHeight(260)
+        self.sequence_input.setMinimumHeight(90)
+        self.sequence_input.setLineWrapMode(QTextEdit.WidgetWidth)
+        self.sequence_input.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.sequence_input.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.sequence_input.textChanged.connect(self.update_sequence_info)
 
-        input_button_layout = QHBoxLayout()
-        input_button_layout.addStretch()
         self.clear_input_button = QPushButton("Clear Input")
         self.clear_input_button.clicked.connect(self.clear_input)
-        input_button_layout.addWidget(self.clear_input_button)
 
         self.sequence_info_text = QTextEdit()
         self.sequence_info_text.setReadOnly(True)
@@ -152,23 +152,24 @@ class NAToolsGUI(QWidget):
         self.sequence_info_text.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
 
         input_layout.addWidget(self.sequence_input)
-        input_layout.addLayout(input_button_layout)
         input_layout.addWidget(self.sequence_info_text)
         input_group.setLayout(input_layout)
 
-        # Mode selector, always visible.
-        mode_group = QGroupBox("Mode")
+        # Mode selector, Clear Input action, and version are always visible.
+        mode_row_widget = QWidget()
         mode_layout = QHBoxLayout()
+        mode_layout.setContentsMargins(0, 0, 0, 0)
         self.mode_combo = QComboBox()
         self.mode_combo.addItems([MODE_CONVERT, MODE_SEARCH, MODE_ADD])
         self.mode_combo.currentTextChanged.connect(self.update_visible_controls)
         mode_layout.addWidget(QLabel("Mode:"))
         mode_layout.addWidget(self.mode_combo)
         mode_layout.addStretch()
+        mode_layout.addWidget(self.clear_input_button)
         self.version_label = QLabel(f"v{APP_VERSION}")
         self.version_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         mode_layout.addWidget(self.version_label)
-        mode_group.setLayout(mode_layout)
+        mode_row_widget.setLayout(mode_layout)
 
         # Convert/Add controls, hidden in Search mode.
         self.convert_group = QGroupBox("Convert Options")
@@ -234,8 +235,11 @@ class NAToolsGUI(QWidget):
         self.search_input.setPlaceholderText(
             "Enter search sequence here. T and U are treated as equivalent."
         )
-        self.search_input.setMinimumHeight(80)
+        self.search_input.setMinimumHeight(70)
         self.search_input.setMaximumHeight(110)
+        self.search_input.setLineWrapMode(QTextEdit.WidgetWidth)
+        self.search_input.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.search_input.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.search_input.textChanged.connect(self.update_search_sequence_info)
 
         self.search_sequence_info_text = QTextEdit()
@@ -282,12 +286,15 @@ class NAToolsGUI(QWidget):
         self.output_text = QTextEdit()
         self.output_text.setFont(sequence_font)
         self.output_text.setReadOnly(True)
+        self.output_text.setLineWrapMode(QTextEdit.WidgetWidth)
+        self.output_text.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.output_text.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         output_layout.addWidget(self.output_summary)
         output_layout.addWidget(self.output_text)
         output_group.setLayout(output_layout)
 
         main_layout.addWidget(input_group)
-        main_layout.addWidget(mode_group)
+        main_layout.addWidget(mode_row_widget)
         main_layout.addWidget(self.convert_group)
         main_layout.addWidget(self.search_group)
         main_layout.addLayout(button_layout)

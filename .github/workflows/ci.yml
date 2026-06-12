@@ -26,14 +26,67 @@ jobs:
       - name: Check version output
         run: python NA_text_converter_finder.py --version
 
-      - name: Check v6.3 GUI controls and search statistics
+      - name: Check v6.4 GUI controls, scrolling, and search statistics
         run: |
           QT_QPA_PLATFORM=offscreen python - <<'PY'
+          from PyQt5.QtCore import QPoint, QPointF, Qt
+          from PyQt5.QtGui import QWheelEvent
           from PyQt5.QtWidgets import QApplication
           import NA_text_converter_finder as m
 
           app = QApplication([])
           gui = m.NAToolsGUI()
+          assert gui.sequence_input.lineWrapMode() == gui.sequence_input.WidgetWidth
+          assert gui.search_input.lineWrapMode() == gui.search_input.WidgetWidth
+          assert gui.output_text.lineWrapMode() == gui.output_text.WidgetWidth
+          assert gui.sequence_input.horizontalScrollBarPolicy() == m.Qt.ScrollBarAlwaysOff
+          assert gui.search_input.horizontalScrollBarPolicy() == m.Qt.ScrollBarAlwaysOff
+          assert gui.output_text.horizontalScrollBarPolicy() == m.Qt.ScrollBarAlwaysOff
+          assert gui.sequence_input.verticalScrollBarPolicy() == m.Qt.ScrollBarAsNeeded
+          assert gui.search_input.verticalScrollBarPolicy() == m.Qt.ScrollBarAsNeeded
+          assert gui.output_text.verticalScrollBarPolicy() == m.Qt.ScrollBarAsNeeded
+          assert (
+              gui.clear_input_button.parentWidget()
+              is not gui.sequence_input.parentWidget()
+          )
+
+          long_sequence = "ATCG" * 10000
+          gui.mode_combo.setCurrentText(m.MODE_SEARCH)
+          gui.show()
+          app.processEvents()
+          assert (
+              gui.sequence_input.geometry().bottom()
+              < gui.sequence_info_text.geometry().top()
+          )
+          assert (
+              gui.search_input.geometry().bottom()
+              < gui.search_sequence_info_text.geometry().top()
+          )
+
+          for editor in (gui.sequence_input, gui.search_input, gui.output_text):
+              editor.setPlainText(long_sequence)
+              app.processEvents()
+              scroll_bar = editor.verticalScrollBar()
+              scroll_bar.setValue(0)
+              local_position = QPointF(editor.viewport().rect().center())
+              global_position = QPointF(
+                  editor.viewport().mapToGlobal(editor.viewport().rect().center())
+              )
+              wheel_event = QWheelEvent(
+                  local_position,
+                  global_position,
+                  QPoint(0, 0),
+                  QPoint(0, -120),
+                  Qt.NoButton,
+                  Qt.NoModifier,
+                  Qt.ScrollUpdate,
+                  False,
+              )
+              QApplication.sendEvent(editor.viewport(), wheel_event)
+              app.processEvents()
+              assert scroll_bar.maximum() > 0
+              assert scroll_bar.value() > 0
+
           gui.sequence_input.setPlainText("ATCG")
           gui.clear_input_button.click()
           assert gui.sequence_input.toPlainText() == ""
@@ -52,7 +105,7 @@ jobs:
 
           checkbox_text = gui.include_complementary_checkbox.text()
           assert "not reverse-complementary" in checkbox_text
-          assert gui.windowTitle().endswith("v6.3")
+          assert gui.windowTitle().endswith("v6.4")
           PY
 
       - name: Check standalone script without icon resources
@@ -61,4 +114,4 @@ jobs:
           cp NA_text_converter_finder.py "$standalone_dir/"
           cd "$standalone_dir"
           python NA_text_converter_finder.py --version
-          QT_QPA_PLATFORM=offscreen python -c "from PyQt5.QtWidgets import QApplication; import NA_text_converter_finder as m; app = QApplication([]); gui = m.NAToolsGUI(); assert not m.APP_RESOURCES_AVAILABLE; assert gui.windowTitle().endswith('v6.3')"
+          QT_QPA_PLATFORM=offscreen python -c "from PyQt5.QtWidgets import QApplication; import NA_text_converter_finder as m; app = QApplication([]); gui = m.NAToolsGUI(); assert not m.APP_RESOURCES_AVAILABLE; assert gui.windowTitle().endswith('v6.4')"

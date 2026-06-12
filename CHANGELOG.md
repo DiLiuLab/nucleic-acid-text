@@ -2,6 +2,23 @@
 
 This file records notable changes to the Nucleic Acid Text Converter and Finder.
 
+## v6.4 - 2026-06-11
+
+### Added
+
+- Vertical scrollbars and mouse-wheel scrolling for the Original Sequence,
+  Search Sequence, and Output editors.
+
+### Changed
+
+- Long sequence text wraps within each editor and can be navigated vertically.
+- The Clear Input button now sits outside the Original Sequence box on the same
+  compact row as the Mode selector.
+- The redundant Mode group title was removed to save vertical space.
+- Search-mode editor and statistics panels no longer overlap at the minimum
+  window size.
+- The Python package and GUI version are now `6.4`.
+
 ## v6.3 - 2026-06-11
 
 ### Added
