@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nucleic-acid-text"
-version = "6.4"
-description = "PyQt5 GUI for nucleic-acid text conversion, repeat expansion, and sequence search highlighting."
+version = "7.1"
+description = "PyQt5 GUI for nucleic-acid text conversion, repeat expansion, sequence search highlighting, hairpin finding, and i-prefix reverse-order notation."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
@@ -25,3 +25,4 @@ na-text-converter = "NA_text_converter_finder:main"
 
 [tool.setuptools]
 py-modules = ["NA_text_converter_finder", "app_resources"]
+packages = ["lib"]

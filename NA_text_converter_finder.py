@@ -10,6 +10,8 @@ Inputs:
       T6 or (CAG)3 is expanded before conversion, search, and sequence statistics.
     - Optional search sequence in Search mode.
     - Optional text or phrase in Add mode.
+    - Optional hairpin parameters in Find hairpins mode.
+    - Optional i-prefix reverse-order handling for the Original Sequence.
 
 Outputs:
     - Converted sequence text,
@@ -17,6 +19,8 @@ Outputs:
     - Original sequence with exact matches highlighted in yellow, reverse-complementary
       matches highlighted in light blue, and optional complementary matches highlighted
       in red.
+    - Hairpin candidates with stem nucleotides highlighted in red, wobble pairs
+      underlined, and maximal-stem hairpins shown in bold.
     - Summary information for the expanded original sequence: DNA/RNA length, total
       length, A, T/U, C, G, whitespace, other characters, and GC%.
 
@@ -38,17 +42,28 @@ except ModuleNotFoundError as error:
 else:
     APP_RESOURCES_AVAILABLE = True
 
+try:
+    from lib.find_hairpins import find_hairpins, write_hairpins_rtf
+except ModuleNotFoundError as error:
+    if error.name not in {"lib", "lib.find_hairpins"}:
+        raise
+    HAIRPIN_MODULE_AVAILABLE = False
+else:
+    HAIRPIN_MODULE_AVAILABLE = True
+
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont, QIcon, QTextCharFormat, QTextCursor
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QFileDialog,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
+    QSpinBox,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -56,16 +71,18 @@ from PyQt5.QtWidgets import (
 
 
 APP_NAME = "Nucleic Acid Converter and Finder"
-APP_VERSION = "6.4"
+APP_VERSION = "7_1"
 APP_ICON_RESOURCE = ":/icons/nucleic_acid_text.png"
 
 CONVERT_REVERSE_COMPLEMENT = "Reverse Complementary"
 CONVERT_REVERSE = "Reverse"
+CONVERT_REVERSE_WITH_I_PREFIX = "Reverse (with i prefix)"
 CONVERT_TO_DNA = "DNA (T instead of U)"
 CONVERT_TO_RNA = "RNA (U instead of T)"
 MODE_CONVERT = "Convert"
 MODE_SEARCH = "Search"
 MODE_ADD = "Add"
+MODE_FIND_HAIRPINS = "Find hairpins"
 
 CASE_PRESERVE = "Preserve original case"
 CASE_UPPER = "UPPERCASE"
@@ -112,7 +129,7 @@ CANONICAL_DNA_COMPLEMENT["U"] = "A"
 
 
 class NAToolsGUI(QWidget):
-    """GUI for nucleic-acid conversion, text addition, and sequence searching."""
+    """GUI for nucleic-acid conversion, text addition, searching, and hairpins."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -136,7 +153,7 @@ class NAToolsGUI(QWidget):
         self.sequence_input = QTextEdit()
         self.sequence_input.setFont(sequence_font)
         self.sequence_input.setPlaceholderText("Paste or type DNA/RNA sequence here...")
-        self.sequence_input.setMinimumHeight(90)
+        self.sequence_input.setMinimumHeight(80)
         self.sequence_input.setLineWrapMode(QTextEdit.WidgetWidth)
         self.sequence_input.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.sequence_input.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
@@ -151,8 +168,20 @@ class NAToolsGUI(QWidget):
         self.sequence_info_text.setPlaceholderText("Original sequence info will appear here.")
         self.sequence_info_text.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
 
+        self.i_prefix_reverse_checkbox = QCheckBox(
+            "Treat i-prefixed bases as reversed biological order"
+        )
+        self.i_prefix_reverse_checkbox.setChecked(False)
+        self.i_prefix_reverse_checkbox.setToolTip(
+            "When checked, a sequence like iAiTiCiG is interpreted as GCTA "
+            "before Convert, Add, Search, and Find hairpins. Only a single "
+            "letter i immediately before A/C/G/T/U is removed."
+        )
+        self.i_prefix_reverse_checkbox.stateChanged.connect(self.update_sequence_info)
+
         input_layout.addWidget(self.sequence_input)
         input_layout.addWidget(self.sequence_info_text)
+        input_layout.addWidget(self.i_prefix_reverse_checkbox)
         input_group.setLayout(input_layout)
 
         # Mode selector, Clear Input action, and version are always visible.
@@ -160,7 +189,9 @@ class NAToolsGUI(QWidget):
         mode_layout = QHBoxLayout()
         mode_layout.setContentsMargins(0, 0, 0, 0)
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems([MODE_CONVERT, MODE_SEARCH, MODE_ADD])
+        self.mode_combo.addItems(
+            [MODE_CONVERT, MODE_SEARCH, MODE_ADD, MODE_FIND_HAIRPINS]
+        )
         self.mode_combo.currentTextChanged.connect(self.update_visible_controls)
         mode_layout.addWidget(QLabel("Mode:"))
         mode_layout.addWidget(self.mode_combo)
@@ -183,6 +214,7 @@ class NAToolsGUI(QWidget):
             [
                 CONVERT_REVERSE_COMPLEMENT,
                 CONVERT_REVERSE,
+                CONVERT_REVERSE_WITH_I_PREFIX,
                 CONVERT_TO_DNA,
                 CONVERT_TO_RNA,
             ]
@@ -266,6 +298,50 @@ class NAToolsGUI(QWidget):
         search_layout.addWidget(self.include_complementary_checkbox)
         self.search_group.setLayout(search_layout)
 
+        # Hairpin controls, hidden except in Find hairpins mode.
+        self.hairpin_group = QGroupBox("Find Hairpins Options")
+        hairpin_layout = QVBoxLayout()
+
+        hairpin_param_row = QHBoxLayout()
+        self.hairpin_min_stem_spin = QSpinBox()
+        self.hairpin_min_stem_spin.setRange(1, 10000)
+        self.hairpin_min_stem_spin.setValue(3)
+        self.hairpin_min_loop_spin = QSpinBox()
+        self.hairpin_min_loop_spin.setRange(1, 10000)
+        self.hairpin_min_loop_spin.setValue(3)
+        self.hairpin_index_base_combo = QComboBox()
+        self.hairpin_index_base_combo.addItems(["1-based positions", "0-based positions"])
+        self.hairpin_index_base_combo.setMinimumWidth(145)
+        hairpin_param_row.addWidget(QLabel("Min stem length:"))
+        hairpin_param_row.addWidget(self.hairpin_min_stem_spin)
+        hairpin_param_row.addWidget(QLabel("Min loop length:"))
+        hairpin_param_row.addWidget(self.hairpin_min_loop_spin)
+        hairpin_param_row.addWidget(QLabel("Positions:"))
+        hairpin_param_row.addWidget(self.hairpin_index_base_combo)
+
+        hairpin_rtf_row = QHBoxLayout()
+        self.hairpin_write_rtf_checkbox = QCheckBox("Write RTF file")
+        self.hairpin_rtf_path_input = QLineEdit("hairpins_output.rtf")
+        self.hairpin_rtf_path_input.setPlaceholderText("RTF output filename")
+        self.hairpin_browse_button = QPushButton("Browse...")
+        self.hairpin_browse_button.clicked.connect(self.browse_hairpin_rtf_output)
+        hairpin_rtf_row.addWidget(self.hairpin_write_rtf_checkbox)
+        hairpin_rtf_row.addWidget(self.hairpin_rtf_path_input)
+        hairpin_rtf_row.addWidget(self.hairpin_browse_button)
+
+        self.hairpin_module_status_label = QLabel("")
+        self.hairpin_module_status_label.setWordWrap(True)
+        if not HAIRPIN_MODULE_AVAILABLE:
+            self.hairpin_module_status_label.setText(
+                "Hairpin support is unavailable because lib/find_hairpins.py "
+                "could not be imported."
+            )
+
+        hairpin_layout.addLayout(hairpin_param_row)
+        hairpin_layout.addLayout(hairpin_rtf_row)
+        hairpin_layout.addWidget(self.hairpin_module_status_label)
+        self.hairpin_group.setLayout(hairpin_layout)
+
         # Buttons.
         button_layout = QHBoxLayout()
         self.run_button = QPushButton("Convert")
@@ -297,6 +373,7 @@ class NAToolsGUI(QWidget):
         main_layout.addWidget(mode_row_widget)
         main_layout.addWidget(self.convert_group)
         main_layout.addWidget(self.search_group)
+        main_layout.addWidget(self.hairpin_group)
         main_layout.addLayout(button_layout)
         main_layout.addWidget(output_group)
         self.setLayout(main_layout)
@@ -307,11 +384,13 @@ class NAToolsGUI(QWidget):
         is_convert = mode == MODE_CONVERT
         is_search = mode == MODE_SEARCH
         is_add = mode == MODE_ADD
+        is_find_hairpins = mode == MODE_FIND_HAIRPINS
 
         self.convert_group.setVisible(is_convert or is_add)
         self.convert_group.setTitle("Add Options" if is_add else "Convert Options")
         self.convert_to_row_widget.setVisible(is_convert)
         self.search_group.setVisible(is_search)
+        self.hairpin_group.setVisible(is_find_hairpins)
         self.prefix_row_widget.setVisible(is_add)
 
         if is_convert:
@@ -323,19 +402,25 @@ class NAToolsGUI(QWidget):
                 "Add output will appear below. The entered text is added before each "
                 "standard A/C/G/T/U base."
             )
-        else:
+        elif is_search:
             self.run_button.setText("Search")
             self.output_summary.setText(
                 "Search output: exact matches = yellow; reverse-complementary matches = "
                 "light blue; optional complementary matches = red."
             )
+        else:
+            self.run_button.setText("Find hairpins")
+            self.output_summary.setText(
+                "Hairpin output: stem nucleotides = red; wobble pairs = underlined; "
+                "maximal-stem hairpins = bold."
+            )
 
     def update_sequence_info(self) -> None:
         """Display essential statistics for the expanded original sequence."""
-        raw_sequence = self.sequence_input.toPlainText()
-        expanded_sequence = expand_repeat_notation(raw_sequence)
-        info = get_original_sequence_info(expanded_sequence)
-        self.sequence_info_text.setPlainText(format_sequence_info(info))
+        sequence, used_i_prefix_reverse = self.get_processed_original_sequence()
+        self.sequence_info_text.setPlainText(
+            format_original_sequence_info(sequence, used_i_prefix_reverse)
+        )
 
     def update_search_sequence_info(self) -> None:
         """Display essential statistics for the expanded search sequence."""
@@ -355,6 +440,8 @@ class NAToolsGUI(QWidget):
             self.search_sequence()
         elif mode == MODE_ADD:
             self.add_sequence()
+        elif mode == MODE_FIND_HAIRPINS:
+            self.find_hairpins_sequence()
         else:
             self.convert_sequence()
 
@@ -380,9 +467,26 @@ class NAToolsGUI(QWidget):
         self.output_text.setCurrentCharFormat(QTextCharFormat())
         self.output_text.setPlainText(text)
 
+    def get_processed_original_sequence(self) -> Tuple[str, bool]:
+        """Return the expanded original sequence, optionally applying i-prefix handling."""
+        expanded_sequence = expand_repeat_notation(self.sequence_input.toPlainText())
+        if not self.i_prefix_reverse_checkbox.isChecked():
+            return expanded_sequence, False
+        return apply_i_prefix_reverse_handling(expanded_sequence)
+
+    def browse_hairpin_rtf_output(self) -> None:
+        """Choose an RTF file path for optional hairpin export."""
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save hairpin RTF file",
+            self.hairpin_rtf_path_input.text().strip() or "hairpins_output.rtf",
+            "RTF files (*.rtf);;All files (*)",
+        )
+        if filename:
+            self.hairpin_rtf_path_input.setText(filename)
+
     def convert_sequence(self) -> None:
-        raw_sequence = self.sequence_input.toPlainText()
-        sequence = expand_repeat_notation(raw_sequence)
+        sequence, used_i_prefix_reverse = self.get_processed_original_sequence()
         operation = self.convert_combo.currentText()
         case_mode = self.case_combo.currentText()
         whitespace_mode = self.whitespace_combo.currentText()
@@ -396,6 +500,11 @@ class NAToolsGUI(QWidget):
             result = reverse_complement_with_case(cleaned_sequence)
         elif operation == CONVERT_REVERSE:
             result = reverse_sequence(cleaned_sequence)
+        elif operation == CONVERT_REVERSE_WITH_I_PREFIX:
+            reversed_sequence = reverse_sequence(cleaned_sequence)
+            result = add_text_before_each_base(
+                apply_case_mode(reversed_sequence, case_mode), "i"
+            )
         elif operation == CONVERT_TO_DNA:
             result = rna_to_dna_with_case(cleaned_sequence)
         elif operation == CONVERT_TO_RNA:
@@ -403,16 +512,17 @@ class NAToolsGUI(QWidget):
         else:
             result = cleaned_sequence
 
-        result = apply_case_mode(result, case_mode)
+        if operation != CONVERT_REVERSE_WITH_I_PREFIX:
+            result = apply_case_mode(result, case_mode)
         self.output_summary.setText(
-            "Conversion complete. " + format_sequence_info(get_original_sequence_info(sequence))
+            "Conversion complete. "
+            + format_original_sequence_info(sequence, used_i_prefix_reverse)
         )
         self.set_output_plain_text(result)
 
     def add_sequence(self) -> None:
         """Add the entered text before each standard base in the expanded sequence."""
-        raw_sequence = self.sequence_input.toPlainText()
-        sequence = expand_repeat_notation(raw_sequence)
+        sequence, used_i_prefix_reverse = self.get_processed_original_sequence()
         case_mode = self.case_combo.currentText()
         whitespace_mode = self.whitespace_combo.currentText()
         other_non_base_mode = self.other_non_base_combo.currentText()
@@ -425,12 +535,12 @@ class NAToolsGUI(QWidget):
 
         self.output_summary.setText(
             "Text addition complete. "
-            + format_sequence_info(get_original_sequence_info(sequence))
+            + format_original_sequence_info(sequence, used_i_prefix_reverse)
         )
         self.set_output_plain_text(result)
 
     def search_sequence(self) -> None:
-        original_sequence = expand_repeat_notation(self.sequence_input.toPlainText())
+        original_sequence, used_i_prefix_reverse = self.get_processed_original_sequence()
         query_sequence = expand_repeat_notation(self.search_input.toPlainText())
         include_complementary = self.include_complementary_checkbox.isChecked()
 
@@ -457,10 +567,69 @@ class NAToolsGUI(QWidget):
         self.output_summary.setText(
             f"Exact matches: {exact_count}; reverse-complementary matches: "
             f"{reverse_complementary_count}; {complementary_summary}. "
-            + format_sequence_info(get_original_sequence_info(original_sequence))
+            + format_original_sequence_info(
+                original_sequence,
+                used_i_prefix_reverse,
+            )
             + warning_text
         )
         self.output_text.setHtml(highlighted_html)
+
+    def find_hairpins_sequence(self) -> None:
+        """Find hairpin candidates in the expanded original sequence."""
+        if not HAIRPIN_MODULE_AVAILABLE:
+            self.output_summary.setText("Hairpin finder is unavailable.")
+            self.set_output_plain_text(
+                "Hairpin support requires lib/find_hairpins.py to be available."
+            )
+            return
+
+        original_sequence, _ = self.get_processed_original_sequence()
+        hairpin_sequence = prepare_sequence_for_hairpin_finding(original_sequence)
+        if not hairpin_sequence:
+            self.output_summary.setText("Please enter a sequence before finding hairpins.")
+            self.set_output_plain_text("No sequence was provided.")
+            return
+
+        min_stem = self.hairpin_min_stem_spin.value()
+        min_loop = self.hairpin_min_loop_spin.value()
+        index_base = 0 if self.hairpin_index_base_combo.currentIndex() == 1 else 1
+
+        hairpins = find_hairpins(
+            hairpin_sequence,
+            min_stem=min_stem,
+            min_loop=min_loop,
+            index_base=index_base,
+        )
+        self.output_text.setHtml(
+            hairpin_results_to_html(hairpin_sequence, hairpins, index_base=index_base)
+        )
+
+        max_stem_text = "N/A"
+        if hairpins:
+            max_stem_text = str(max(hairpin["stem_length"] for hairpin in hairpins))
+
+        saved_text = ""
+        if self.hairpin_write_rtf_checkbox.isChecked():
+            filename = self.hairpin_rtf_path_input.text().strip() or "hairpins_output.rtf"
+            self.hairpin_rtf_path_input.setText(filename)
+            try:
+                write_hairpins_rtf(
+                    hairpin_sequence,
+                    hairpins,
+                    filename,
+                    index_base=index_base,
+                )
+            except OSError as error:
+                saved_text = f" RTF export failed: {error}"
+            else:
+                saved_text = f" RTF written to {filename}."
+
+        self.output_summary.setText(
+            f"Hairpins found: {len(hairpins)}; min stem={min_stem}; "
+            f"min loop={min_loop}; max stem={max_stem_text}; "
+            f"position indexing={index_base}-based.{saved_text}"
+        )
 
 
 
@@ -542,6 +711,39 @@ def expand_repeat_notation(sequence: str) -> str:
     return "".join(result)
 
 
+def apply_i_prefix_reverse_handling(sequence: str) -> Tuple[str, bool]:
+    """
+    Interpret single-i-prefixed bases as reverse-order notation.
+
+    Example:
+        iAiTiCiG -> GCTA
+
+    Only one letter i immediately before a standard A/C/G/T/U base is removed.
+    If no such prefixed base is found, the sequence is returned unchanged.
+    """
+    tokens: List[str] = []
+    found_i_prefixed_base = False
+    index = 0
+    while index < len(sequence):
+        char = sequence[index]
+        if (
+            char.lower() == "i"
+            and index + 1 < len(sequence)
+            and is_standard_base(sequence[index + 1])
+        ):
+            tokens.append(sequence[index + 1])
+            found_i_prefixed_base = True
+            index += 2
+            continue
+
+        tokens.append(char)
+        index += 1
+
+    if not found_i_prefixed_base:
+        return sequence, False
+    return "".join(reversed(tokens)), True
+
+
 def get_original_sequence_info(sequence: str) -> Dict[str, object]:
     """Return counts and GC% for the expanded original sequence."""
     counts = {
@@ -594,6 +796,125 @@ def format_sequence_info(
         f"Space/whitespace={info['whitespace']}; Other={info['other']}; "
         f"GC%={gc_text}."
     )
+
+
+def format_original_sequence_info(
+    sequence: str,
+    used_i_prefix_reverse: bool = False,
+) -> str:
+    """Format original sequence stats, naming i-prefix reverse handling when used."""
+    info_text = format_sequence_info(get_original_sequence_info(sequence))
+    if used_i_prefix_reverse:
+        return info_text.replace(
+            "Original sequence info after repeat expansion:",
+            "Original sequence info after repeat expansion and "
+            "i-prefix reverse handling:",
+        )
+    return info_text
+
+
+def prepare_sequence_for_hairpin_finding(sequence: str) -> str:
+    """Match the standalone hairpin GUI by removing whitespace and uppercasing."""
+    return "".join(char for char in sequence.upper() if not char.isspace())
+
+
+def hairpin_results_to_html(
+    sequence: str,
+    hairpins: Sequence[Dict[str, object]],
+    index_base: int = 1,
+) -> str:
+    """Render hairpin results with red stems, underlined wobble positions, and bold max stems."""
+    escaped_sequence = html.escape(sequence)
+    parts = ['<html><body style="font-family: Arial, Helvetica, sans-serif;">']
+
+    if not hairpins:
+        parts.append("<p>No hairpins found with these parameters.</p>")
+        parts.append(f"<pre>{escaped_sequence}</pre>")
+        parts.append("</body></html>")
+        return "".join(parts)
+
+    max_stem = max(int(hairpin["stem_length"]) for hairpin in hairpins)
+    parts.append(
+        '<p><b>Legend:</b> stem nucleotides are red; wobble-pair nucleotides '
+        "are underlined; maximal-stem hairpins are bold.</p>"
+    )
+
+    for index, hairpin in enumerate(hairpins, start=1):
+        stem_length = int(hairpin["stem_length"])
+        loop_length = int(hairpin["loop_length"])
+        stem1_start = int(hairpin["stem1_start"])
+        stem2_start = int(hairpin["stem2_start"])
+        wobble_pairs = int(hairpin["wobble_pairs"])
+        gc_pairs = int(hairpin["gc_pairs"])
+        at_au_pairs = int(hairpin["at_au_pairs"])
+        wobble_positions = hairpin.get("wobble_positions", [])
+
+        parts.append(
+            "<p>"
+            f"<b>Hairpin {index}</b>: stem length={stem_length}; "
+            f"loop length={loop_length}; stem1 start={stem1_start}; "
+            f"stem2 start={stem2_start}; wobble pairs={wobble_pairs}; "
+            f"GC pairs={gc_pairs}; AT/AU pairs={at_au_pairs}; "
+            f"wobble positions={html.escape(str(wobble_positions))}."
+            "</p>"
+        )
+        parts.append(
+            '<pre style="font-family: Courier New, Menlo, Consolas, monospace; '
+            'white-space: pre-wrap;">'
+        )
+        if stem_length == max_stem:
+            parts.append("<b>")
+        parts.append(
+            hairpin_sequence_to_html(
+                sequence,
+                hairpin,
+                index_base=index_base,
+            )
+        )
+        if stem_length == max_stem:
+            parts.append("</b>")
+        parts.append("</pre>")
+
+    parts.append("</body></html>")
+    return "".join(parts)
+
+
+def hairpin_sequence_to_html(
+    sequence: str,
+    hairpin: Dict[str, object],
+    index_base: int = 1,
+) -> str:
+    """Render one hairpin's sequence line with stem and wobble formatting."""
+    stem_length = int(hairpin["stem_length"])
+    stem1_start = int(hairpin["stem1_start"]) - index_base
+    stem2_start = int(hairpin["stem2_start"]) - index_base
+    stem_positions = set(range(stem1_start, stem1_start + stem_length)) | set(
+        range(stem2_start, stem2_start + stem_length)
+    )
+
+    wobble_positions_list = hairpin.get("wobble_positions", [])
+    if index_base == 1:
+        wobble_positions = {int(position) - 1 for position in wobble_positions_list}
+    else:
+        wobble_positions = {int(position) for position in wobble_positions_list}
+
+    parts = []
+    for position, char in enumerate(sequence):
+        is_stem = position in stem_positions
+        is_wobble = position in wobble_positions
+
+        styles = []
+        if is_stem:
+            styles.append("color:#d32f2f")
+        if is_wobble:
+            styles.append("text-decoration: underline")
+
+        escaped_char = html.escape(char)
+        if styles:
+            parts.append(f'<span style="{"; ".join(styles)};">{escaped_char}</span>')
+        else:
+            parts.append(escaped_char)
+    return "".join(parts)
 
 
 def is_standard_base(char: str) -> bool:

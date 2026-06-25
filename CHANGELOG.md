@@ -2,6 +2,37 @@
 
 This file records notable changes to the Nucleic Acid Text Converter and Finder.
 
+## v7_1 - 2026-06-25
+
+### Added
+
+- An Original Sequence option to treat single-`i`-prefixed bases as reverse-order
+  biological notation before running Convert, Add, Search, or Find hairpins.
+- A Convert option named `Reverse (with i prefix)` that reverses the processed
+  sequence and adds lowercase `i` before each standard base.
+
+### Changed
+
+- The GUI and terminal version output are now `v7_1`.
+- The Python package version is now `7.1`.
+
+## v7 - 2026-06-18
+
+### Added
+
+- A Find hairpins mode in the main PyQt GUI.
+- Configurable hairpin minimum stem length, minimum loop length, and 0-based or
+  1-based position reporting.
+- Hairpin output highlighting: red stem nucleotides, underlined wobble-pair
+  nucleotides, and bold maximal-stem hairpins.
+- Optional RTF export for hairpin results.
+- `lib/find_hairpins.py`, preserving the supplied hairpin finder as a
+  standalone Tkinter GUI and command-line tool.
+
+### Changed
+
+- The Python package and GUI version are now `7`.
+
 ## v6.4 - 2026-06-11
 
 ### Added

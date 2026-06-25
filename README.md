@@ -1,9 +1,9 @@
 # Nucleic Acid Text Converter and Finder
 
-A compact PyQt5 desktop GUI for converting, cleaning, inspecting, and searching
-nucleic-acid text.
+A compact PyQt5 desktop GUI for converting, cleaning, inspecting, searching,
+and finding hairpin candidates in nucleic-acid text.
 
-The main script is `NA_text_converter_finder.py`. The current version is **v6.4**.
+The main script is `NA_text_converter_finder.py`. The current version is **v7_1**.
 See [CHANGELOG.md](CHANGELOG.md) for version history and release details.
 
 ## Features
@@ -14,6 +14,7 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and release details.
 - Convert input sequence text:
   - reverse complement
   - reverse
+  - reverse with lowercase `i` added before each standard base
   - DNA output with `T` instead of `U`
   - RNA output with `U` instead of `T`
 - Use the dedicated Add mode to add any letter or phrase before each standard
@@ -25,6 +26,15 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and release details.
 - Highlight exact matches in yellow and reverse-complementary matches in light blue.
 - Optionally include complementary matches, highlighted in red. Complementary
   searching is disabled by default.
+- Use the Find hairpins mode to identify possible DNA/RNA hairpin candidates
+  using configurable minimum stem length, minimum loop length, and 0-based or
+  1-based position reporting.
+- Highlight hairpin stems in red, underline wobble-pair nucleotides, and show
+  maximal-stem hairpins in bold.
+- Optionally write hairpin results to an RTF file.
+- Optionally interpret Original Sequence entries such as `iAiTiCiG` as reversed
+  biological-order sequence `GCTA` across Convert, Add, Search, and Find
+  hairpins modes.
 - Display the application version in the GUI and report it in the terminal with
   `-v` or `--version`.
 - Use a custom DNA-search application icon in the GUI and packaged applications.
@@ -104,8 +114,23 @@ Dock icon and a directly downloadable standalone Python script. The macOS
 application is ad-hoc signed but not Apple-notarized.
 
 For standalone use, `NA_text_converter_finder.py` may be copied and run without
-`app_resources.py`. All sequence functions remain available, but the custom
-application icon is not loaded.
+`app_resources.py`. All non-icon sequence functions remain available, but the
+custom application icon is not loaded. The Find hairpins mode additionally
+requires `lib/find_hairpins.py`; if that library file is absent, the main GUI
+still opens and reports that hairpin support is unavailable.
+
+## Run the Hairpin Finder Standalone
+
+The hairpin finder is also available as its own standalone script:
+
+```bash
+python3 lib/find_hairpins.py --gui
+python3 lib/find_hairpins.py GGGAAACCC hairpins_output.rtf 3 3 1
+```
+
+With command-line arguments, it prints hairpin dictionaries as JSON and writes
+an RTF visualization. With no arguments, or with `--gui`, it launches the
+original standalone Tkinter hairpin GUI.
 
 ## Make the Script Executable
 
@@ -146,7 +171,7 @@ Notes:
 Run a basic syntax/import compile check:
 
 ```bash
-python3 -m py_compile NA_text_converter_finder.py app_resources.py
+python3 -m py_compile NA_text_converter_finder.py app_resources.py lib/find_hairpins.py
 ```
 
 ## License

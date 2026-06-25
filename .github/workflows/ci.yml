@@ -20,13 +20,30 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
 
-      - name: Compile script
-        run: python -m py_compile NA_text_converter_finder.py app_resources.py
+      - name: Compile scripts
+        run: python -m py_compile NA_text_converter_finder.py app_resources.py lib/find_hairpins.py
 
       - name: Check version output
         run: python NA_text_converter_finder.py --version
 
-      - name: Check v6.4 GUI controls, scrolling, and search statistics
+      - name: Check standalone hairpin CLI
+        run: |
+          python lib/find_hairpins.py GGGAAACCC /tmp/hairpins.rtf 3 3 1 > /tmp/hairpins.json
+          test -s /tmp/hairpins.rtf
+          python - <<'PY'
+          import json
+          with open("/tmp/hairpins.json") as handle:
+              text = handle.read()
+          payload = text.split("\nWrote ", 1)[0]
+          hairpins = json.loads(payload)
+          assert len(hairpins) == 1
+          assert hairpins[0]["stem_length"] == 3
+          assert hairpins[0]["loop_length"] == 3
+          assert hairpins[0]["stem1_start"] == 1
+          assert hairpins[0]["stem2_start"] == 7
+          PY
+
+      - name: Check v7_1 GUI controls, scrolling, search statistics, hairpins, and i-prefix handling
         run: |
           QT_QPA_PLATFORM=offscreen python - <<'PY'
           from PyQt5.QtCore import QPoint, QPointF, Qt
@@ -36,6 +53,8 @@ jobs:
 
           app = QApplication([])
           gui = m.NAToolsGUI()
+          assert m.APP_VERSION == "7_1"
+          assert m.HAIRPIN_MODULE_AVAILABLE
           assert gui.sequence_input.lineWrapMode() == gui.sequence_input.WidgetWidth
           assert gui.search_input.lineWrapMode() == gui.search_input.WidgetWidth
           assert gui.output_text.lineWrapMode() == gui.output_text.WidgetWidth
@@ -88,9 +107,37 @@ jobs:
               assert scroll_bar.value() > 0
 
           gui.sequence_input.setPlainText("ATCG")
+          gui.convert_combo.setCurrentText(m.CONVERT_REVERSE_COMPLEMENT)
           gui.clear_input_button.click()
           assert gui.sequence_input.toPlainText() == ""
 
+          gui.mode_combo.setCurrentText(m.MODE_CONVERT)
+          gui.sequence_input.setPlainText("GCTA")
+          gui.convert_combo.setCurrentText(m.CONVERT_REVERSE_WITH_I_PREFIX)
+          gui.convert_sequence()
+          assert gui.output_text.toPlainText() == "iAiTiCiG"
+
+          gui.i_prefix_reverse_checkbox.setChecked(True)
+          gui.sequence_input.setPlainText("iAiTiCiG")
+          gui.convert_combo.setCurrentText(m.CONVERT_TO_DNA)
+          gui.convert_sequence()
+          assert gui.output_text.toPlainText() == "GCTA"
+          assert "i-prefix reverse handling" in gui.output_summary.text()
+
+          gui.mode_combo.setCurrentText(m.MODE_ADD)
+          gui.prefix_input.setText("x")
+          gui.add_sequence()
+          assert gui.output_text.toPlainText() == "xGxCxTxA"
+
+          gui.mode_combo.setCurrentText(m.MODE_SEARCH)
+          gui.search_input.setPlainText("GCTA")
+          gui.search_sequence()
+          assert "Exact matches: 1" in gui.output_summary.text()
+          assert gui.output_text.toPlainText() == "GCTA"
+
+          gui.i_prefix_reverse_checkbox.setChecked(False)
+          gui.sequence_input.setPlainText("ATCG")
+          gui.convert_combo.setCurrentText(m.CONVERT_REVERSE_COMPLEMENT)
           gui.set_output_plain_text("copy me")
           gui.copy_output_button.click()
           assert app.clipboard().text() == "copy me"
@@ -105,7 +152,26 @@ jobs:
 
           checkbox_text = gui.include_complementary_checkbox.text()
           assert "not reverse-complementary" in checkbox_text
-          assert gui.windowTitle().endswith("v6.4")
+
+          gui.mode_combo.setCurrentText(m.MODE_FIND_HAIRPINS)
+          assert gui.hairpin_group.isVisible()
+          gui.sequence_input.setPlainText("GGGAAACCC")
+          gui.hairpin_min_stem_spin.setValue(3)
+          gui.hairpin_min_loop_spin.setValue(3)
+          gui.find_hairpins_sequence()
+          assert "Hairpins found: 1" in gui.output_summary.text()
+          hairpin_output = gui.output_text.toPlainText()
+          assert "Hairpin 1" in hairpin_output
+          assert "stem length=3" in hairpin_output
+          assert "stem1 start=1" in hairpin_output
+          assert "stem2 start=7" in hairpin_output
+
+          gui.i_prefix_reverse_checkbox.setChecked(True)
+          gui.sequence_input.setPlainText("iCiCiCiAiAiAiGiGiG")
+          gui.find_hairpins_sequence()
+          assert "Hairpins found: 1" in gui.output_summary.text()
+
+          assert gui.windowTitle().endswith("v7_1")
           PY
 
       - name: Check standalone script without icon resources
@@ -114,4 +180,4 @@ jobs:
           cp NA_text_converter_finder.py "$standalone_dir/"
           cd "$standalone_dir"
           python NA_text_converter_finder.py --version
-          QT_QPA_PLATFORM=offscreen python -c "from PyQt5.QtWidgets import QApplication; import NA_text_converter_finder as m; app = QApplication([]); gui = m.NAToolsGUI(); assert not m.APP_RESOURCES_AVAILABLE; assert gui.windowTitle().endswith('v6.4')"
+          QT_QPA_PLATFORM=offscreen python -c "from PyQt5.QtWidgets import QApplication; import NA_text_converter_finder as m; app = QApplication([]); gui = m.NAToolsGUI(); assert not m.APP_RESOURCES_AVAILABLE; assert not m.HAIRPIN_MODULE_AVAILABLE; assert gui.windowTitle().endswith('v7_1')"
