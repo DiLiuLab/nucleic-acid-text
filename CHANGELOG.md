@@ -2,6 +2,37 @@
 
 This file records notable changes to the Nucleic Acid Text Converter and Finder.
 
+## v7_3 - 2026-09-21
+
+### Added
+
+- A bottom status banner that reports the 1-based letter position clicked in
+  Output, or the first and last positions and length of a selected region.
+  Spaces and punctuation are ignored. Hairpin sequence lines use their own
+  sequence positions.
+
+### Changed
+
+- The GUI and terminal version output are now `v7_3`; the package version is `7.3`.
+
+## v7_2 - 2026-09-21
+
+### Added
+
+- A Circular sequence checkbox below the original input for Search matches
+  that cross the end/start boundary.
+- IUPAC degenerate-code matching for exact, complementary, and
+  reverse-complementary searches, including compact repeats such as `N5`.
+- A Search popup table showing every IUPAC code, its possible bases, and its
+  DNA and RNA complements.
+- Search statistics showing searchable length and degenerate-code count.
+- Search count phrases colored to match their highlighted sequence results, with
+  the IUPAC reference button alongside the complementary-search checkbox.
+
+### Changed
+
+- The GUI and terminal version output are now `v7_2`; the package version is `7.2`.
+
 ## v7_1 - 2026-06-25
 
 ### Added

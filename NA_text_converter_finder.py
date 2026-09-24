@@ -51,19 +51,24 @@ except ModuleNotFoundError as error:
 else:
     HAIRPIN_MODULE_AVAILABLE = True
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import QEvent, Qt
 from PyQt5.QtGui import QFont, QIcon, QTextCharFormat, QTextCursor
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
     QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -71,7 +76,7 @@ from PyQt5.QtWidgets import (
 
 
 APP_NAME = "Nucleic Acid Converter and Finder"
-APP_VERSION = "7_1"
+APP_VERSION = "7_3"
 APP_ICON_RESOURCE = ":/icons/nucleic_acid_text.png"
 
 CONVERT_REVERSE_COMPLEMENT = "Reverse Complementary"
@@ -101,6 +106,29 @@ STANDARD_BASES_UPPER = set("ACGTU")
 # IUPAC nucleic-acid letters are treated as searchable sequence letters. U is
 # normalized to T during search so DNA and RNA search sequences can be compared.
 NA_LETTERS = set("ACGTURYSWKMBDHVNacgturyswkmbdhvn")
+IUPAC_BASES = {
+    "A": frozenset("A"),
+    "C": frozenset("C"),
+    "G": frozenset("G"),
+    "T": frozenset("T"),
+    "R": frozenset("AG"),
+    "Y": frozenset("CT"),
+    "S": frozenset("CG"),
+    "W": frozenset("AT"),
+    "K": frozenset("GT"),
+    "M": frozenset("AC"),
+    "B": frozenset("CGT"),
+    "D": frozenset("AGT"),
+    "H": frozenset("ACT"),
+    "V": frozenset("ACG"),
+    "N": frozenset("ACGT"),
+}
+IUPAC_CODE_ORDER = "ACGTURYSWKMBDHVN"
+MATCH_STYLE_CSS = {
+    "exact": "background-color:#fff176; color:black;",
+    "reverse_complementary": "background-color:#81d4fa; color:black;",
+    "complementary": "background-color:#ef5350; color:white;",
+}
 
 DNA_COMPLEMENT_UPPER = {
     "A": "T",
@@ -133,6 +161,7 @@ class NAToolsGUI(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
+        self._hairpin_output_sequence = ""
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
         if APP_RESOURCES_AVAILABLE:
             self.setWindowIcon(QIcon(APP_ICON_RESOURCE))
@@ -159,6 +188,12 @@ class NAToolsGUI(QWidget):
         self.sequence_input.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.sequence_input.textChanged.connect(self.update_sequence_info)
 
+        self.circular_checkbox = QCheckBox("Circular sequence (Search wraps end to start)")
+        self.circular_checkbox.setToolTip(
+            "Search the original sequence as a circle. A match may cross the "
+            "boundary between its last and first bases."
+        )
+
         self.clear_input_button = QPushButton("Clear Input")
         self.clear_input_button.clicked.connect(self.clear_input)
 
@@ -180,6 +215,7 @@ class NAToolsGUI(QWidget):
         self.i_prefix_reverse_checkbox.stateChanged.connect(self.update_sequence_info)
 
         input_layout.addWidget(self.sequence_input)
+        input_layout.addWidget(self.circular_checkbox)
         input_layout.addWidget(self.sequence_info_text)
         input_layout.addWidget(self.i_prefix_reverse_checkbox)
         input_group.setLayout(input_layout)
@@ -265,7 +301,7 @@ class NAToolsGUI(QWidget):
         self.search_input = QTextEdit()
         self.search_input.setFont(sequence_font)
         self.search_input.setPlaceholderText(
-            "Enter search sequence here. T and U are treated as equivalent."
+            "Enter sequence (e.g. GAGN5CTC). IUPAC codes and T/U are supported."
         )
         self.search_input.setMinimumHeight(70)
         self.search_input.setMaximumHeight(110)
@@ -285,17 +321,22 @@ class NAToolsGUI(QWidget):
         )
 
         self.include_complementary_checkbox = QCheckBox(
-            "Include complementary matches "
-            "(not reverse-complementary; red highlighting)"
+            "Include complementary matches (same direction; red)"
         )
         self.include_complementary_checkbox.setChecked(False)
         self.include_complementary_checkbox.setToolTip(
             "Complementary uses the base-by-base complement in the same direction. "
             "Reverse-complementary also reverses the sequence."
         )
+        self.iupac_table_button = QPushButton("IUPAC code && complement")
+        self.iupac_table_button.clicked.connect(self.show_iupac_code_table)
+        search_options_row = QHBoxLayout()
+        search_options_row.addWidget(self.include_complementary_checkbox)
+        search_options_row.addStretch()
+        search_options_row.addWidget(self.iupac_table_button)
         search_layout.addWidget(self.search_input)
         search_layout.addWidget(self.search_sequence_info_text)
-        search_layout.addWidget(self.include_complementary_checkbox)
+        search_layout.addLayout(search_options_row)
         self.search_group.setLayout(search_layout)
 
         # Hairpin controls, hidden except in Find hairpins mode.
@@ -358,6 +399,7 @@ class NAToolsGUI(QWidget):
         output_group = QGroupBox("Output")
         output_layout = QVBoxLayout()
         self.output_summary = QLabel("")
+        self.output_summary.setTextFormat(Qt.RichText)
         self.output_summary.setWordWrap(True)
         self.output_text = QTextEdit()
         self.output_text.setFont(sequence_font)
@@ -365,6 +407,13 @@ class NAToolsGUI(QWidget):
         self.output_text.setLineWrapMode(QTextEdit.WidgetWidth)
         self.output_text.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.output_text.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.output_text.viewport().installEventFilter(self)
+        self.output_text.textChanged.connect(self.reset_output_position_status)
+        self.output_text.selectionChanged.connect(self.show_output_selection_position)
+        self.output_position_status = QLabel()
+        self.output_position_status.setFrameShape(QFrame.StyledPanel)
+        self.output_position_status.setContentsMargins(8, 4, 8, 4)
+        self.reset_output_position_status()
         output_layout.addWidget(self.output_summary)
         output_layout.addWidget(self.output_text)
         output_group.setLayout(output_layout)
@@ -376,7 +425,108 @@ class NAToolsGUI(QWidget):
         main_layout.addWidget(self.hairpin_group)
         main_layout.addLayout(button_layout)
         main_layout.addWidget(output_group)
+        main_layout.addWidget(self.output_position_status)
         self.setLayout(main_layout)
+
+    def eventFilter(self, watched, event) -> bool:
+        if (
+            watched is self.output_text.viewport()
+            and event.type() == QEvent.MouseButtonPress
+            and event.button() == Qt.LeftButton
+        ):
+            self.show_output_letter_position(event.pos())
+        return super().eventFilter(watched, event)
+
+    def reset_output_position_status(self) -> None:
+        self.output_position_status.setText(
+            "Click a letter or select a region in Output for 1-based positions "
+            "(spaces ignored)."
+        )
+
+    def show_output_selection_position(self) -> None:
+        """Report the inclusive letter range and length of a text selection."""
+        selection = self.output_text.textCursor()
+        if not selection.hasSelection():
+            return
+
+        document = self.output_text.document()
+        selection_start = selection.selectionStart()
+        start_position = 0
+        if self._hairpin_output_sequence:
+            first_block = document.findBlock(selection_start)
+            last_block = document.findBlock(selection.selectionEnd() - 1)
+            if (
+                first_block != last_block
+                or first_block.text() != self._hairpin_output_sequence
+            ):
+                self.reset_output_position_status()
+                return
+            start_position = first_block.position()
+
+        selected_text = selection.selectedText()
+        selected_letter_count = sum(char.isalpha() for char in selected_text)
+        if not selected_letter_count:
+            self.reset_output_position_status()
+            return
+
+        prefix = QTextCursor(document)
+        prefix.setPosition(start_position)
+        prefix.setPosition(selection_start, QTextCursor.KeepAnchor)
+        preceding_letters = sum(char.isalpha() for char in prefix.selectedText())
+        first_position = preceding_letters + 1
+        last_position = preceding_letters + selected_letter_count
+        self.output_position_status.setText(
+            f"Selected positions: {first_position}-{last_position}; "
+            f"length: {selected_letter_count} letters (1-based)"
+        )
+
+    def show_output_letter_position(self, point) -> None:
+        """Report the letter under a mouse click, even beside a cursor boundary."""
+        document = self.output_text.document()
+        nearest_position = self.output_text.cursorForPosition(point).position()
+        for position in (nearest_position - 1, nearest_position):
+            if position < 0 or position >= document.characterCount() - 1:
+                continue
+
+            character_cursor = QTextCursor(document)
+            character_cursor.setPosition(position)
+            left_edge = self.output_text.cursorRect(character_cursor)
+            character_cursor.movePosition(QTextCursor.NextCharacter, QTextCursor.KeepAnchor)
+            character = character_cursor.selectedText()
+            if not character.isalpha():
+                continue
+
+            right_edge = self.output_text.cursorRect(character_cursor)
+            if right_edge.y() == left_edge.y() and right_edge.x() > left_edge.x():
+                right_x = right_edge.x()
+            else:
+                # The following cursor can be on the next visual line after wrapping.
+                right_x = left_edge.x() + self.output_text.fontMetrics().horizontalAdvance(character)
+            if not (
+                left_edge.y() <= point.y() < left_edge.y() + left_edge.height()
+                and left_edge.x() <= point.x() < right_x
+            ):
+                continue
+
+            start_position = 0
+            if self._hairpin_output_sequence:
+                block = character_cursor.block()
+                if block.text() != self._hairpin_output_sequence:
+                    break
+                start_position = block.position()
+
+            prefix_cursor = QTextCursor(document)
+            prefix_cursor.setPosition(start_position)
+            prefix_cursor.setPosition(
+                character_cursor.position(), QTextCursor.KeepAnchor
+            )
+            letter_position = sum(char.isalpha() for char in prefix_cursor.selectedText())
+            self.output_position_status.setText(
+                f"Output letter position: {letter_position} (1-based)"
+            )
+            return
+
+        self.reset_output_position_status()
 
     def update_visible_controls(self) -> None:
         """Show only controls related to the selected mode."""
@@ -427,9 +577,56 @@ class NAToolsGUI(QWidget):
         raw_sequence = self.search_input.toPlainText()
         expanded_sequence = expand_repeat_notation(raw_sequence)
         info = get_original_sequence_info(expanded_sequence)
+        searchable_length = sum(char in NA_LETTERS for char in expanded_sequence)
+        degenerate_count = sum(
+            char in NA_LETTERS and not is_standard_base(char)
+            for char in expanded_sequence
+        )
         self.search_sequence_info_text.setPlainText(
             format_sequence_info(info, "Search sequence")
+            + f" Searchable length={searchable_length}; Degenerate codes={degenerate_count}."
         )
+
+    def show_iupac_code_table(self) -> None:
+        """Show the possible bases and DNA/RNA complements for each search code."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("IUPAC code & complement")
+        dialog.resize(600, 510)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(
+            QLabel(
+                "T and U are equivalent in Search. Complementary keeps the code "
+                "order; reverse-complementary also reverses it."
+            )
+        )
+        table = QTableWidget(len(IUPAC_CODE_ORDER), 4, dialog)
+        table.setHorizontalHeaderLabels(
+            ["Code", "Possible bases", "DNA complement", "RNA complement"]
+        )
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QTableWidget.NoEditTriggers)
+        table.setAlternatingRowColors(True)
+        for row, code in enumerate(IUPAC_CODE_ORDER):
+            bases = IUPAC_BASES[canonicalize_base(code)]
+            possible_bases = ", ".join(
+                "T/U" if base == "T" else base for base in sorted(bases)
+            )
+            for column, value in enumerate(
+                (
+                    code,
+                    possible_bases,
+                    DNA_COMPLEMENT_UPPER[code],
+                    RNA_COMPLEMENT_UPPER[code],
+                )
+            ):
+                table.setItem(row, column, QTableWidgetItem(value))
+        table.resizeColumnsToContents()
+        table.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(table)
+        buttons = QDialogButtonBox(QDialogButtonBox.Close, parent=dialog)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        dialog.exec_()
 
     def run_selected_mode(self) -> None:
         """Run conversion, text addition, or search for the selected mode."""
@@ -450,6 +647,7 @@ class NAToolsGUI(QWidget):
         self.sequence_input.clear()
 
     def clear_output(self) -> None:
+        self._hairpin_output_sequence = ""
         self.output_summary.setText("")
         self.output_text.clear()
         self.output_text.setCurrentCharFormat(QTextCharFormat())
@@ -460,6 +658,7 @@ class NAToolsGUI(QWidget):
 
     def set_output_plain_text(self, text: str) -> None:
         """Set unhighlighted output text and clear any previous search formatting."""
+        self._hairpin_output_sequence = ""
         self.output_text.clear()
         cursor = self.output_text.textCursor()
         cursor.movePosition(QTextCursor.Start)
@@ -540,8 +739,9 @@ class NAToolsGUI(QWidget):
         self.set_output_plain_text(result)
 
     def search_sequence(self) -> None:
+        self._hairpin_output_sequence = ""
         original_sequence, used_i_prefix_reverse = self.get_processed_original_sequence()
-        query_sequence = expand_repeat_notation(self.search_input.toPlainText())
+        query_sequence = self.search_input.toPlainText()
         include_complementary = self.include_complementary_checkbox.isChecked()
 
         (
@@ -554,24 +754,34 @@ class NAToolsGUI(QWidget):
             original_sequence,
             query_sequence,
             include_complementary=include_complementary,
+            circular=self.circular_checkbox.isChecked(),
         )
-        warning_text = ""
-        if warnings:
-            warning_text = " " + " ".join(warnings)
-
         complementary_summary = (
             f"Complementary matches: {complementary_count}"
             if include_complementary
             else "Complementary matches: not searched"
         )
+
+        def styled_count(style: str, label: str) -> str:
+            return f'<span style="{MATCH_STYLE_CSS[style]}">{html.escape(label)}</span>'
+
+        warning_text = " " + html.escape(" ".join(warnings)) if warnings else ""
         self.output_summary.setText(
-            f"Exact matches: {exact_count}; reverse-complementary matches: "
-            f"{reverse_complementary_count}; {complementary_summary}. "
-            + format_original_sequence_info(
-                original_sequence,
-                used_i_prefix_reverse,
+            "<html><body>"
+            + styled_count("exact", f"Exact matches: {exact_count}")
+            + "; "
+            + styled_count(
+                "reverse_complementary",
+                f"reverse-complementary matches: {reverse_complementary_count}",
+            )
+            + "; "
+            + styled_count("complementary", complementary_summary)
+            + ". "
+            + html.escape(
+                format_original_sequence_info(original_sequence, used_i_prefix_reverse)
             )
             + warning_text
+            + "</body></html>"
         )
         self.output_text.setHtml(highlighted_html)
 
@@ -601,6 +811,7 @@ class NAToolsGUI(QWidget):
             min_loop=min_loop,
             index_base=index_base,
         )
+        self._hairpin_output_sequence = hairpin_sequence
         self.output_text.setHtml(
             hairpin_results_to_html(hairpin_sequence, hairpins, index_base=index_base)
         )
@@ -670,10 +881,10 @@ def expand_repeat_notation(sequence: str) -> str:
         T6 -> TTTTTT
         (CAG)3 -> CAGCAGCAG
 
-    Single-character expansion is applied only to standard DNA/RNA bases
-    A/C/G/T/U. Parenthesized groups can contain bases, whitespace, or other
+    Single-character expansion is applied to IUPAC DNA/RNA letters, including
+    degenerate codes such as N. Parenthesized groups can contain bases, whitespace, or other
     characters; their contents are recursively expanded before repetition.
-    Digits that do not immediately follow a standard base or a parenthesized
+    Digits that do not immediately follow an IUPAC letter or a parenthesized
     group are preserved as regular characters.
     """
     result: List[str] = []
@@ -698,7 +909,7 @@ def expand_repeat_notation(sequence: str) -> str:
             index += 1
             continue
 
-        if is_standard_base(char):
+        if char in NA_LETTERS:
             repeat_count, next_index = read_repeat_number(sequence, index + 1)
             if next_index != index + 1:
                 result.append(char * repeat_count)
@@ -1042,20 +1253,32 @@ def reverse_complement_canonical_dna(sequence: str) -> str:
     return complement_canonical_dna(sequence)[::-1]
 
 
-def find_all_overlapping(haystack: str, needle: str) -> List[int]:
-    """Return start positions of all overlapping occurrences of needle in haystack."""
-    if not needle:
+def find_all_overlapping(
+    haystack: str, needle: str, circular: bool = False
+) -> List[int]:
+    """Return starts of IUPAC-compatible matches, including boundary matches if circular."""
+    if not haystack or not needle or len(needle) > len(haystack):
         return []
 
-    positions = []
-    start = 0
-    while True:
-        found = haystack.find(needle, start)
-        if found == -1:
-            break
-        positions.append(found)
-        start = found + 1
-    return positions
+    # A circular match may cross the boundary once, but may not make a full lap.
+    # Preserve literal matching for callers that pass non-sequence characters.
+    original_bases = [
+        IUPAC_BASES[char] if char in IUPAC_BASES else frozenset(char)
+        for char in haystack
+    ]
+    pattern_bases = [
+        IUPAC_BASES[char] if char in IUPAC_BASES else frozenset(char)
+        for char in needle
+    ]
+    start_count = len(haystack) if circular else len(haystack) - len(needle) + 1
+    return [
+        start
+        for start in range(start_count)
+        if all(
+            original_bases[(start + offset) % len(haystack)] & bases
+            for offset, bases in enumerate(pattern_bases)
+        )
+    ]
 
 
 def collect_match_styles(
@@ -1064,30 +1287,31 @@ def collect_match_styles(
     exact_pattern: str,
     reverse_complementary_pattern: str,
     complementary_pattern: str,
+    circular: bool = False,
 ) -> Tuple[Dict[int, str], int, int, int]:
     """Collect separate highlight styles and counts for the three match classes."""
     styles: Dict[int, str] = {}
 
     complementary_starts = find_all_overlapping(
-        searchable_original, complementary_pattern
+        searchable_original, complementary_pattern, circular=circular
     )
     for start in complementary_starts:
         for offset in range(len(complementary_pattern)):
-            styles[raw_indices[start + offset]] = "complementary"
+            styles[raw_indices[(start + offset) % len(raw_indices)]] = "complementary"
 
     reverse_complementary_starts = find_all_overlapping(
-        searchable_original, reverse_complementary_pattern
+        searchable_original, reverse_complementary_pattern, circular=circular
     )
     for start in reverse_complementary_starts:
         for offset in range(len(reverse_complementary_pattern)):
             # Reverse-complementary matches take priority over complementary matches.
-            styles[raw_indices[start + offset]] = "reverse_complementary"
+            styles[raw_indices[(start + offset) % len(raw_indices)]] = "reverse_complementary"
 
-    exact_starts = find_all_overlapping(searchable_original, exact_pattern)
+    exact_starts = find_all_overlapping(searchable_original, exact_pattern, circular=circular)
     for start in exact_starts:
         for offset in range(len(exact_pattern)):
             # Exact matches take priority over both transformed match classes.
-            styles[raw_indices[start + offset]] = "exact"
+            styles[raw_indices[(start + offset) % len(raw_indices)]] = "exact"
 
     return (
         styles,
@@ -1100,11 +1324,8 @@ def collect_match_styles(
 def text_to_highlighted_html(raw_sequence: str, styles: Dict[int, str]) -> str:
     """Convert raw text to HTML with distinct colors for each match class."""
     span_for_style = {
-        "exact": '<span style="background-color:#fff176; color:black;">',
-        "reverse_complementary": (
-            '<span style="background-color:#81d4fa; color:black;">'
-        ),
-        "complementary": '<span style="background-color:#ef5350; color:white;">',
+        style: f'<span style="{css}">'
+        for style, css in MATCH_STYLE_CSS.items()
     }
 
     parts = [
@@ -1131,16 +1352,22 @@ def highlight_search_matches(
     raw_sequence: str,
     query_sequence: str,
     include_complementary: bool = False,
+    circular: bool = False,
 ) -> Tuple[str, int, int, int, List[str]]:
     """
     Highlight exact, reverse-complementary, and optional complementary matches.
 
-    The search ignores spaces and line breaks and treats T and U as equivalent. Exact
-    query matches are yellow, reverse-complementary matches are light blue, and
-    complementary matches are red when include_complementary is True.
+    Search expands compact repeats, ignores non-sequence characters, treats T
+    and U as equivalent, and interprets IUPAC codes as compatible base sets.
+    Circular searches allow a
+    match to cross the end/start boundary once. Exact query matches are yellow,
+    reverse-complementary matches are light blue, and complementary matches are
+    red when include_complementary is True.
     """
     searchable_original, raw_indices = extract_searchable_sequence(raw_sequence)
-    exact_pattern, _ = extract_searchable_sequence(query_sequence)
+    exact_pattern, _ = extract_searchable_sequence(
+        expand_repeat_notation(query_sequence)
+    )
     warnings: List[str] = []
 
     if not exact_pattern:
@@ -1185,6 +1412,7 @@ def highlight_search_matches(
         exact_pattern,
         reverse_complementary_search_pattern,
         complementary_search_pattern,
+        circular=circular,
     )
     return (
         text_to_highlighted_html(raw_sequence, styles),

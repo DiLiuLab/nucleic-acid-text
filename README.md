@@ -3,13 +3,14 @@
 A compact PyQt5 desktop GUI for converting, cleaning, inspecting, searching,
 and finding hairpin candidates in nucleic-acid text.
 
-The main script is `NA_text_converter_finder.py`. The current version is **v7_1**.
+The main script is `NA_text_converter_finder.py`. The current version is **v7_3**.
 See [CHANGELOG.md](CHANGELOG.md) for version history and release details.
 
 ## Features
 
 - Expand compact repeat notation before conversion or search:
   - `T6` becomes `TTTTTT`
+  - `N5` becomes `NNNNN`
   - `(CAG)3` becomes `CAGCAGCAG`
 - Convert input sequence text:
   - reverse complement
@@ -23,9 +24,18 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and release details.
 - Preserve or remove whitespace independently from other non-base characters.
 - Search for sequence matches while ignoring whitespace and treating `T` and `U`
   as equivalent.
+- Use IUPAC degenerate codes in a search query. For example, `GAGN5CTC`
+  matches `GAGAAAAACTC` and any other five-base segment between `GAG` and
+  `CTC`. Degenerate letters in the original sequence are treated as compatible
+  when their possible bases overlap with the query.
+- Check **Circular sequence** below Original Sequence to find matches that
+  cross from the end of the original sequence back to its start. A query can
+  span the boundary once, up to the original sequence length.
 - Highlight exact matches in yellow and reverse-complementary matches in light blue.
 - Optionally include complementary matches, highlighted in red. Complementary
   searching is disabled by default.
+- Open **IUPAC code & complement** in Search to see each degenerate
+  code's possible bases and its DNA/RNA complement.
 - Use the Find hairpins mode to identify possible DNA/RNA hairpin candidates
   using configurable minimum stem length, minimum loop length, and 0-based or
   1-based position reporting.
@@ -44,6 +54,10 @@ See [CHANGELOG.md](CHANGELOG.md) for version history and release details.
   dedicated buttons.
 - Navigate long original, search, and output sequences with vertical scrollbars
   or the mouse wheel while text wraps within each editor.
+- Click a letter in the Output box to see its 1-based letter position in the
+  status banner, or select a region to see its first and last positions and
+  length. Spaces and punctuation are skipped; hairpin sequence lines are
+  numbered independently of their descriptive text.
 - Display live sequence statistics for both the original and search sequences.
 - Clarify that complementary matching uses the same sequence direction and is
   different from reverse-complementary matching.
