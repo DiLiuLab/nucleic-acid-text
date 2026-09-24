@@ -10,10 +10,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
@@ -43,7 +43,10 @@ jobs:
           assert hairpins[0]["stem2_start"] == 7
           PY
 
-      - name: Check v7_1 GUI controls, scrolling, search statistics, hairpins, and i-prefix handling
+      - name: Run regression tests
+        run: QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -v
+
+      - name: Check v7_3 GUI controls, scrolling, search statistics, hairpins, and i-prefix handling
         run: |
           QT_QPA_PLATFORM=offscreen python - <<'PY'
           from PyQt5.QtCore import QPoint, QPointF, Qt
@@ -53,7 +56,7 @@ jobs:
 
           app = QApplication([])
           gui = m.NAToolsGUI()
-          assert m.APP_VERSION == "7_1"
+          assert m.APP_VERSION == "7_3"
           assert m.HAIRPIN_MODULE_AVAILABLE
           assert gui.sequence_input.lineWrapMode() == gui.sequence_input.WidgetWidth
           assert gui.search_input.lineWrapMode() == gui.search_input.WidgetWidth
@@ -151,7 +154,7 @@ jobs:
           assert "G=2" in search_info
 
           checkbox_text = gui.include_complementary_checkbox.text()
-          assert "not reverse-complementary" in checkbox_text
+          assert "same direction" in checkbox_text
 
           gui.mode_combo.setCurrentText(m.MODE_FIND_HAIRPINS)
           assert gui.hairpin_group.isVisible()
@@ -171,7 +174,7 @@ jobs:
           gui.find_hairpins_sequence()
           assert "Hairpins found: 1" in gui.output_summary.text()
 
-          assert gui.windowTitle().endswith("v7_1")
+          assert gui.windowTitle().endswith("v7_3")
           PY
 
       - name: Check standalone script without icon resources
@@ -180,4 +183,4 @@ jobs:
           cp NA_text_converter_finder.py "$standalone_dir/"
           cd "$standalone_dir"
           python NA_text_converter_finder.py --version
-          QT_QPA_PLATFORM=offscreen python -c "from PyQt5.QtWidgets import QApplication; import NA_text_converter_finder as m; app = QApplication([]); gui = m.NAToolsGUI(); assert not m.APP_RESOURCES_AVAILABLE; assert not m.HAIRPIN_MODULE_AVAILABLE; assert gui.windowTitle().endswith('v7_1')"
+          QT_QPA_PLATFORM=offscreen python -c "from PyQt5.QtWidgets import QApplication; import NA_text_converter_finder as m; app = QApplication([]); gui = m.NAToolsGUI(); assert not m.APP_RESOURCES_AVAILABLE; assert not m.HAIRPIN_MODULE_AVAILABLE; assert gui.windowTitle().endswith('v7_3')"
